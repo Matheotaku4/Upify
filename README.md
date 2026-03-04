@@ -1,5 +1,12 @@
 # Upify
 
+[![Release](https://img.shields.io/github/v/release/Matheotaku4/Upify?color=blue&logo=github)](https://github.com/Matheotaku4/Upify/releases)
+[![Node](https://img.shields.io/badge/Node.js-%3E%3D_18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Electron](https://img.shields.io/badge/Electron-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)](#)
+[![Stars](https://img.shields.io/github/stars/Matheotaku4/Upify?color=gold)](https://github.com/Matheotaku4/Upify/stargazers)
+
+
 > [!WARNING]  
 > This app is vibe coded  
 
