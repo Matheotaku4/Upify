@@ -69,7 +69,7 @@ function createApp() {
     const file = req.file;
 
     if (!file) {
-      res.status(400).json({ error: "Aucun fichier recu (champ attendu: file)." });
+      res.status(400).json({ error: "No file received (expected field: file)." });
       return;
     }
 
@@ -88,7 +88,7 @@ function createApp() {
     if (!normalizedTargets.length) {
       await fs.unlink(file.path).catch(() => {});
       res.status(400).json({
-        error: "Aucune cible valide selectionnee.",
+        error: "No valid target selected.",
         supportedTargets
       });
       return;
@@ -118,7 +118,7 @@ function createApp() {
             results[requested] = {
               ok: false,
               target: normalized,
-              error: error.message || "Erreur inconnue",
+              error: error.message || "Unknown error",
               details: isUploadError ? (error.details || null) : null
             };
           }
@@ -184,7 +184,7 @@ function stopServer(server) {
 if (require.main === module) {
   startServer().catch((error) => {
     // eslint-disable-next-line no-console
-    console.error("Erreur au demarrage:", error);
+    console.error("Startup error:", error);
     process.exit(1);
   });
 }

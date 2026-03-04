@@ -1,7 +1,7 @@
 {
   "name": "multiupload",
   "version": "1.0.0",
-  "description": "Multi-uploader vers plusieurs hebergeurs de fichiers",
+  "description": "Multi-uploader to multiple file hosts",
   "main": "electron-main.js",
   "bin": "src/server.js",
   "scripts": {

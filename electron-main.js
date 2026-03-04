@@ -55,7 +55,7 @@ app.whenReady().then(async () => {
     await createMainWindow();
   } catch (error) {
     const message = error?.message || String(error);
-    dialog.showErrorBox("Demarrage impossible", `Le serveur local n'a pas pu demarrer.\n\n${message}`);
+    dialog.showErrorBox("Startup failed", `The local server could not start.\n\n${message}`);
     await shutdownServer();
     app.quit();
   }

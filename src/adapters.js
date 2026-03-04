@@ -246,11 +246,11 @@ async function uploadToGofile(file, options = {}) {
     );
     const createBody = parseJsonLoose(createResp.data);
     if (createResp.status < 200 || createResp.status >= 300 || createBody?.status !== "ok") {
-      throw makeErrorFromResponse("Gofile: impossible de creer un compte temporaire", createResp, createBody);
+      throw makeErrorFromResponse("Gofile: failed to create temporary account", createResp, createBody);
     }
     token = createBody.data?.token;
     if (!token) {
-      throw new UploadError("Gofile: token manquant dans la reponse de creation de compte", createBody);
+      throw new UploadError("Gofile: missing token in account creation response", createBody);
     }
   }
 
@@ -261,7 +261,7 @@ async function uploadToGofile(file, options = {}) {
     });
     const accountBody = parseJsonLoose(accountResp.data);
     if (accountResp.status < 200 || accountResp.status >= 300 || accountBody?.status !== "ok") {
-      throw makeErrorFromResponse("Gofile: lecture du compte impossible", accountResp, accountBody);
+      throw makeErrorFromResponse("Gofile: failed to read account data", accountResp, accountBody);
     }
     folderId = accountBody.data?.rootFolder || null;
   }
@@ -287,7 +287,7 @@ async function uploadToGofile(file, options = {}) {
     };
   }
 
-  throw makeErrorFromResponse("Gofile: echec upload", uploadResp, uploadBody);
+  throw makeErrorFromResponse("Gofile: upload failed", uploadResp, uploadBody);
 }
 
 async function uploadTo1fichier(file, options = {}) {
@@ -299,7 +299,7 @@ async function uploadTo1fichier(file, options = {}) {
   const serverBody = parseJsonLoose(serverResp.data);
   if (serverResp.status < 200 || serverResp.status >= 300 || !serverBody?.url || !serverBody?.id) {
     throw makeErrorFromResponse(
-      "1fichier: impossible d'obtenir le serveur d'upload",
+      "1fichier: unable to get upload server",
       serverResp,
       serverBody
     );
@@ -341,7 +341,7 @@ async function uploadTo1fichier(file, options = {}) {
   });
 
   if (uploadResp.status !== 302 && uploadResp.status !== 200) {
-    throw makeErrorFromResponse("1fichier: upload refuse", uploadResp);
+    throw makeErrorFromResponse("1fichier: upload rejected", uploadResp);
   }
 
   const reportResp = await http.get(`https://${uploadHost}/end.pl`, {
@@ -358,7 +358,7 @@ async function uploadTo1fichier(file, options = {}) {
     };
   }
 
-  throw makeErrorFromResponse("1fichier: rapport de fin invalide", reportResp, reportBody);
+  throw makeErrorFromResponse("1fichier: invalid completion report", reportResp, reportBody);
 }
 
 async function uploadToRootzRegular(file, options = {}) {
@@ -382,19 +382,19 @@ async function uploadToRootzRegular(file, options = {}) {
     (typeof body?.error === "string" && body.error.toLowerCase().includes("multipart"));
 
   if (asksMultipart) {
-    throw new MultipartRequiredError("Rootz: upload multipart requis", body);
+    throw new MultipartRequiredError("Rootz: multipart upload required", body);
   }
 
   if (response.status >= 200 && response.status < 300 && body?.success) {
     const shortId = body.data?.shortId;
     const url = shortId ? `https://rootz.so/d/${shortId}` : body.data?.url;
     if (!url) {
-      throw new UploadError("Rootz: lien manquant dans la reponse d'upload", body);
+      throw new UploadError("Rootz: missing link in upload response", body);
     }
     return { url, raw: body };
   }
 
-  throw makeErrorFromResponse("Rootz: echec upload standard", response, body);
+  throw makeErrorFromResponse("Rootz: standard upload failed", response, body);
 }
 
 async function readChunk(fileHandle, start, length) {
@@ -412,7 +412,7 @@ async function uploadToRootzMultipart(file, options = {}) {
   });
   const initBody = parseJsonLoose(initResp.data);
   if (initResp.status < 200 || initResp.status >= 300 || !initBody?.success) {
-    throw makeErrorFromResponse("Rootz: init multipart impossible", initResp, initBody);
+    throw makeErrorFromResponse("Rootz: multipart init failed", initResp, initBody);
   }
 
   const uploadId = initBody.uploadId;
@@ -421,7 +421,7 @@ async function uploadToRootzMultipart(file, options = {}) {
   const totalParts = Number(initBody.totalParts);
 
   if (!uploadId || !key || !chunkSize || !totalParts) {
-    throw new UploadError("Rootz: reponse init multipart incomplete", initBody);
+    throw new UploadError("Rootz: incomplete multipart init response", initBody);
   }
 
   const urlsResp = await http.post("https://rootz.so/api/files/multipart/batch-urls", {
@@ -432,7 +432,7 @@ async function uploadToRootzMultipart(file, options = {}) {
   });
   const urlsBody = parseJsonLoose(urlsResp.data);
   if (urlsResp.status < 200 || urlsResp.status >= 300 || !urlsBody?.success) {
-    throw makeErrorFromResponse("Rootz: impossible d'obtenir les URLs de chunk", urlsResp, urlsBody);
+    throw makeErrorFromResponse("Rootz: unable to get chunk URLs", urlsResp, urlsBody);
   }
 
   const partUrls = { ...(urlsBody.urls || {}) };
@@ -452,7 +452,7 @@ async function uploadToRootzMultipart(file, options = {}) {
         const singleBody = parseJsonLoose(singleResp.data);
         if (singleResp.status < 200 || singleResp.status >= 300 || !singleBody?.success || !singleBody?.url) {
           throw makeErrorFromResponse(
-            `Rootz: URL absente pour la partie ${partNumber}`,
+            `Rootz: missing URL for part ${partNumber}`,
             singleResp,
             singleBody
           );
@@ -472,12 +472,12 @@ async function uploadToRootzMultipart(file, options = {}) {
         timeout: Math.max(HTTP_TIMEOUT_MS, 300_000)
       });
       if (putResp.status < 200 || putResp.status >= 300) {
-        throw makeErrorFromResponse(`Rootz: upload chunk ${partNumber} echoue`, putResp);
+        throw makeErrorFromResponse(`Rootz: chunk ${partNumber} upload failed`, putResp);
       }
 
       const etagRaw = putResp.headers?.etag || putResp.headers?.ETag;
       if (!etagRaw) {
-        throw new UploadError(`Rootz: ETag manquant pour la partie ${partNumber}`);
+        throw new UploadError(`Rootz: missing ETag for part ${partNumber}`);
       }
       parts.push({
         partNumber,
@@ -499,7 +499,7 @@ async function uploadToRootzMultipart(file, options = {}) {
   });
   const completeBody = parseJsonLoose(completeResp.data);
   if (completeResp.status < 200 || completeResp.status >= 300 || !completeBody?.success) {
-    throw makeErrorFromResponse("Rootz: finalisation multipart echouee", completeResp, completeBody);
+    throw makeErrorFromResponse("Rootz: multipart completion failed", completeResp, completeBody);
   }
 
   const outFile = completeBody.file || completeBody.data || {};
@@ -508,7 +508,7 @@ async function uploadToRootzMultipart(file, options = {}) {
     : (outFile.downloadUrl || outFile.url || null);
 
   if (!url) {
-    throw new UploadError("Rootz: lien absent apres completion multipart", completeBody);
+    throw new UploadError("Rootz: missing link after multipart completion", completeBody);
   }
 
   return { url, raw: completeBody };
@@ -560,13 +560,13 @@ function parseSendNowPayload(raw) {
 async function uploadToSendNow(file, options = {}) {
   const uploadPageResp = await http.get("https://send.now/upload");
   if (uploadPageResp.status < 200 || uploadPageResp.status >= 300) {
-    throw makeErrorFromResponse("Send.now: impossible de charger la page d'upload", uploadPageResp);
+    throw makeErrorFromResponse("Send.now: unable to load upload page", uploadPageResp);
   }
 
   const parsedForm = extractSendNowForm(uploadPageResp.data);
   const actionAttr = parsedForm?.action || null;
   if (!actionAttr) {
-    throw new UploadError("Send.now: action de formulaire introuvable");
+    throw new UploadError("Send.now: form action not found");
   }
 
   const actionUrl = new URL(actionAttr, "https://send.now/upload").toString();
@@ -616,7 +616,7 @@ async function uploadToSendNow(file, options = {}) {
     }
   }
 
-  throw makeErrorFromResponse("Send.now: reponse d'upload inattendue", uploadResp, payload);
+  throw makeErrorFromResponse("Send.now: unexpected upload response", uploadResp, payload);
 }
 
 async function uploadToFileditch(file) {
@@ -677,10 +677,10 @@ async function uploadToFileditch(file) {
   }
 
   if (lastFailure) {
-    throw makeErrorFromResponse("Fileditch: echec upload apres fallback extensions", lastFailure.response, lastFailure.body);
+    throw makeErrorFromResponse("Fileditch: upload failed after extension fallbacks", lastFailure.response, lastFailure.body);
   }
 
-  throw new UploadError("Fileditch: echec upload inconnu");
+  throw new UploadError("Fileditch: unknown upload failure");
 }
 
 async function uploadToBuzzheavier(file, options = {}) {
@@ -711,7 +711,7 @@ async function uploadToBuzzheavier(file, options = {}) {
     };
   }
 
-  throw makeErrorFromResponse("Buzzheavier: echec upload", response, body);
+  throw makeErrorFromResponse("Buzzheavier: upload failed", response, body);
 }
 
 async function uploadToRanoz(file) {
@@ -726,7 +726,7 @@ async function uploadToRanoz(file) {
   const shareUrl = metaBody?.data?.url;
 
   if (metaResp.status < 200 || metaResp.status >= 300 || !uploadUrl) {
-    throw makeErrorFromResponse("Ranoz: impossible d'obtenir l'URL signee", metaResp, metaBody);
+    throw makeErrorFromResponse("Ranoz: unable to get signed URL", metaResp, metaBody);
   }
 
   const putResp = await http.put(uploadUrl, fs.createReadStream(file.path), {
@@ -743,13 +743,13 @@ async function uploadToRanoz(file) {
     };
   }
 
-  throw makeErrorFromResponse("Ranoz: echec de l'upload du contenu", putResp);
+  throw makeErrorFromResponse("Ranoz: content upload failed", putResp);
 }
 
 async function uploadToTarget(target, file, options = {}) {
   const normalized = normalizeTarget(target);
   if (!normalized) {
-    throw new UploadError(`Cible inconnue: ${target}`);
+    throw new UploadError(`Unknown target: ${target}`);
   }
 
   switch (normalized) {
@@ -766,7 +766,7 @@ async function uploadToTarget(target, file, options = {}) {
     case "ranoz":
       return uploadToRanoz(file, options);
     default:
-      throw new UploadError(`Cible non supportee: ${target}`);
+      throw new UploadError(`Unsupported target: ${target}`);
   }
 }
 

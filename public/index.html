@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -19,20 +19,20 @@
         <p class="kicker">Upload multiple services</p>
         <h1>MultiUploader</h1>
         <p class="subtitle">
-          Uploade un fichier vers Gofile, 1fichier, Rootz, Send.now, Buzzheavier
-          et Ranoz en un clic.
+          Upload one file to Gofile, 1fichier, Rootz, Send.now, Buzzheavier,
+          and Ranoz in one click.
         </p>
       </section>
 
       <section class="panel">
         <form id="upload-form">
           <label class="field">
-            <span>Fichier</span>
+            <span>File</span>
             <input id="file-input" name="file" type="file" required />
           </label>
 
           <div class="field">
-            <span>Cibles</span>
+            <span>Targets</span>
             <div class="targets">
               <label><input type="checkbox" value="gofile" checked /> gofile.io</label>
               <label><input type="checkbox" value="1fichier" checked /> 1fichier.com</label>
@@ -44,7 +44,7 @@
           </div>
 
           <details class="advanced">
-            <summary>Options avancees (facultatif)</summary>
+            <summary>Advanced options (optional)</summary>
 
             <div class="field-grid">
               <label class="field">
@@ -68,26 +68,26 @@
               </label>
 
               <label class="field">
-                <span>Send.now destinataire</span>
-                <input id="opt-sendnow-email" type="email" placeholder="email@domaine.com" />
+                <span>Send.now recipient</span>
+                <input id="opt-sendnow-email" type="email" placeholder="email@domain.com" />
               </label>
             </div>
           </details>
 
-          <button id="submit-btn" type="submit">Lancer le multi-upload</button>
+          <button id="submit-btn" type="submit">Start multi-upload</button>
         </form>
       </section>
 
       <section class="panel results">
         <div class="results-head">
-          <h2>Resultats</h2>
+          <h2>Results</h2>
           <div class="results-actions">
-            <button id="copy-all-btn" type="button" disabled>Copier tous les liens</button>
-            <p id="status-line">Pret.</p>
+            <button id="copy-all-btn" type="button" disabled>Copy all links</button>
+            <p id="status-line">Ready.</p>
           </div>
         </div>
         <div id="results-list" class="results-list">
-          <p class="empty">Aucun upload lance.</p>
+          <p class="empty">No upload started yet.</p>
         </div>
       </section>
     </main>
@@ -147,7 +147,7 @@
         copyAllBtn.disabled = lastLinks.length === 0;
 
         if (!entries.length) {
-          resultsList.innerHTML = '<p class="empty">Aucun resultat.</p>';
+          resultsList.innerHTML = '<p class="empty">No results.</p>';
           return;
         }
 
@@ -156,7 +156,7 @@
             if (result.ok) {
               const url = result.url
                 ? `<a href="${result.url}" target="_blank" rel="noopener noreferrer">${result.url}</a>`
-                : "<span>Aucun lien retourne</span>";
+                : "<span>No link returned</span>";
               return `
                 <article class="result ok">
                   <div class="result-top">
@@ -174,10 +174,10 @@
               <article class="result ko">
                 <div class="result-top">
                   <strong>${requestedTarget}</strong>
-                  <span>ERREUR</span>
+                  <span>ERROR</span>
                 </div>
                 <div class="result-body">
-                  <p>${result.error || "Erreur inconnue"}</p>
+                  <p>${result.error || "Unknown error"}</p>
                   ${details}
                 </div>
               </article>
@@ -194,9 +194,9 @@
         }
         try {
           await navigator.clipboard.writeText(lastLinks.join("\n"));
-          statusLine.textContent = `${lastLinks.length} lien(s) copie(s).`;
+          statusLine.textContent = `${lastLinks.length} link(s) copied.`;
         } catch (error) {
-          statusLine.textContent = "Impossible de copier automatiquement.";
+          statusLine.textContent = "Automatic copy failed.";
         }
       });
 
@@ -207,11 +207,11 @@
         const targets = selectedTargets();
 
         if (!file) {
-          statusLine.textContent = "Selectionne un fichier.";
+          statusLine.textContent = "Select a file.";
           return;
         }
         if (!targets.length) {
-          statusLine.textContent = "Selectionne au moins une cible.";
+          statusLine.textContent = "Select at least one target.";
           return;
         }
 
@@ -222,9 +222,9 @@
         body.append("options", JSON.stringify(options));
 
         submitBtn.disabled = true;
-        submitBtn.textContent = "Upload en cours...";
-        statusLine.textContent = `Upload de ${file.name} vers ${targets.length} cible(s)...`;
-        resultsList.innerHTML = '<p class="empty">Traitement...</p>';
+        submitBtn.textContent = "Uploading...";
+        statusLine.textContent = `Uploading ${file.name} to ${targets.length} target(s)...`;
+        resultsList.innerHTML = '<p class="empty">Processing...</p>';
 
         try {
           const response = await fetch("/api/upload", {
@@ -234,17 +234,17 @@
           const payload = await response.json();
 
           if (!response.ok) {
-            throw new Error(payload.error || "Echec de la requete upload");
+            throw new Error(payload.error || "Upload request failed");
           }
 
           renderResults(payload);
-          statusLine.textContent = "Termine.";
+          statusLine.textContent = "Done.";
         } catch (error) {
-          resultsList.innerHTML = `<p class="empty">Erreur: ${error.message}</p>`;
-          statusLine.textContent = "Echec.";
+          resultsList.innerHTML = `<p class="empty">Error: ${error.message}</p>`;
+          statusLine.textContent = "Failed.";
         } finally {
           submitBtn.disabled = false;
-          submitBtn.textContent = "Lancer le multi-upload";
+          submitBtn.textContent = "Start multi-upload";
         }
       });
     </script>
