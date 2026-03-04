@@ -9,6 +9,7 @@
     "dev": "node src/server.js",
     "dev:desktop": "electron .",
     "build:exe": "electron-builder --win portable",
+    "build:release": "electron-builder --win portable nsis",
     "build:cli-exe": "pkg . --targets node18-win-x64 --output dist/multiuploader.exe"
   },
   "engines": {
@@ -28,7 +29,6 @@
   "build": {
     "appId": "com.multiupload.desktop",
     "productName": "MultiUploader",
-    "artifactName": "MultiUploader.exe",
     "directories": {
       "output": "dist-electron"
     },
@@ -45,8 +45,20 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
         }
       ]
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-setup.${ext}"
     }
   },
   "pkg": {
