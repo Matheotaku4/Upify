@@ -120,12 +120,98 @@
       const statusLine = document.getElementById("status-line");
       const resultsList = document.getElementById("results-list");
       const hostProgress = document.getElementById("host-progress");
+      const advancedDetails = document.querySelector("details.advanced");
+      const targetInputs = [...document.querySelectorAll(".targets input[type='checkbox']")];
+      const preferenceInputIds = [
+        "opt-gofile-token",
+        "opt-1fichier-apikey",
+        "opt-rootz-folder",
+        "opt-buzz-location",
+        "opt-sendnow-email",
+        "opt-viking-user",
+        "opt-filemirage-token",
+        "opt-pixeldrain-key"
+      ];
+      const PREFS_STORAGE_KEY = "multiuploader.preferences.v1";
       let lastLinks = [];
       const progressState = new Map();
       let progressTicker = null;
 
       function selectedTargets() {
-        return [...document.querySelectorAll(".targets input:checked")].map((el) => el.value);
+        return targetInputs.filter((el) => el.checked).map((el) => el.value);
+      }
+
+      function readPreferences() {
+        try {
+          const raw = localStorage.getItem(PREFS_STORAGE_KEY);
+          if (!raw) {
+            return null;
+          }
+          const parsed = JSON.parse(raw);
+          return parsed && typeof parsed === "object" ? parsed : null;
+        } catch (_err) {
+          return null;
+        }
+      }
+
+      function writePreferences(payload) {
+        try {
+          localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(payload));
+        } catch (_err) {
+          // Ignore write errors (private mode / disabled storage).
+        }
+      }
+
+      function collectPreferences() {
+        const fields = {};
+        for (const id of preferenceInputIds) {
+          const el = document.getElementById(id);
+          if (!el) {
+            continue;
+          }
+          fields[id] = el.value;
+        }
+
+        return {
+          targets: selectedTargets(),
+          fields,
+          advancedOpen: Boolean(advancedDetails?.open)
+        };
+      }
+
+      function applyPreferences(payload) {
+        if (!payload || typeof payload !== "object") {
+          return;
+        }
+
+        if (Array.isArray(payload.targets)) {
+          const selected = new Set(payload.targets.map((value) => String(value)));
+          for (const input of targetInputs) {
+            input.checked = selected.has(input.value);
+          }
+        }
+
+        const fields = payload.fields;
+        if (fields && typeof fields === "object") {
+          for (const id of preferenceInputIds) {
+            if (!Object.prototype.hasOwnProperty.call(fields, id)) {
+              continue;
+            }
+            const el = document.getElementById(id);
+            if (!el) {
+              continue;
+            }
+            el.value = fields[id] == null ? "" : String(fields[id]);
+          }
+        }
+
+        if (advancedDetails && typeof payload.advancedOpen === "boolean") {
+          advancedDetails.open = payload.advancedOpen;
+        }
+      }
+
+      function persistPreferences() {
+        writePreferences(collectPreferences());
       }
 
       function buildOptions() {
@@ -388,6 +474,22 @@
           statusLine.textContent = "Automatic copy failed.";
         }
       });
+
+      applyPreferences(readPreferences());
+      for (const input of targetInputs) {
+        input.addEventListener("change", persistPreferences);
+      }
+      for (const id of preferenceInputIds) {
+        const field = document.getElementById(id);
+        if (!field) {
+          continue;
+        }
+        field.addEventListener("input", persistPreferences);
+        field.addEventListener("change", persistPreferences);
+      }
+      if (advancedDetails) {
+        advancedDetails.addEventListener("toggle", persistPreferences);
+      }
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();

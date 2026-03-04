@@ -11,6 +11,35 @@
   --accent-2: #1bc7a3;
 }
 
+html {
+  color-scheme: dark;
+}
+
+html,
+body {
+  scrollbar-width: thin;
+  scrollbar-color: #3a6671 #0b1417;
+}
+
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #0b1417;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #2d5a66, #5ab3a7);
+  border: 2px solid #0b1417;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #3b7280, #73cfb8);
+}
+
 * {
   box-sizing: border-box;
 }

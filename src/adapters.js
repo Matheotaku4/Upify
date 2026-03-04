@@ -245,8 +245,34 @@ function collectSendNowFields(formHtml) {
   return fields;
 }
 
+async function ensureGofileFolderPublic(token, folderId) {
+  if (!token || !folderId) {
+    return;
+  }
+
+  const response = await http.put(
+    `https://api.gofile.io/contents/${encodeURIComponent(folderId)}/update`,
+    {
+      attribute: "public",
+      attributeValue: true
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    }
+  );
+  const body = parseJsonLoose(response.data);
+
+  if (response.status < 200 || response.status >= 300 || body?.status !== "ok") {
+    throw makeErrorFromResponse("Gofile: failed to set folder public", response, body);
+  }
+}
+
 async function uploadToGofile(file, options = {}) {
   let token = options.token || null;
+  let accountRootFolder = null;
 
   if (!token) {
     const createResp = await http.post(
@@ -261,9 +287,10 @@ async function uploadToGofile(file, options = {}) {
     if (!token) {
       throw new UploadError("Gofile: missing token in account creation response", createBody);
     }
+    accountRootFolder = createBody.data?.rootFolder || null;
   }
 
-  let folderId = options.folderId || null;
+  let folderId = options.folderId || accountRootFolder || null;
   if (!folderId) {
     const accountResp = await http.get("https://api.gofile.io/accounts/website", {
       headers: { Authorization: `Bearer ${token}` }
@@ -273,6 +300,10 @@ async function uploadToGofile(file, options = {}) {
       throw makeErrorFromResponse("Gofile: failed to read account data", accountResp, accountBody);
     }
     folderId = accountBody.data?.rootFolder || null;
+  }
+
+  if (folderId) {
+    await ensureGofileFolderPublic(token, folderId);
   }
 
   const form = new FormData();
