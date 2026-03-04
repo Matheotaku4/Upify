@@ -685,6 +685,8 @@ async function uploadToFileditch(file) {
 
 async function uploadToBuzzheavier(file, options = {}) {
   const locationId = options.locationId || "3eb9t1559lkv";
+  const customTimeout = Number(options.timeoutMs);
+  const timeoutMs = Number.isFinite(customTimeout) && customTimeout > 0 ? customTimeout : 0;
   const targetUrl = new URL(`https://w.buzzheavier.com/${encodeURIComponent(toSafeFileName(file.originalname))}`);
   targetUrl.searchParams.set("locationId", locationId);
   if (options.note) {
@@ -698,7 +700,8 @@ async function uploadToBuzzheavier(file, options = {}) {
       headers: {
         "Content-Type": file.mimetype || "application/octet-stream",
         "Content-Length": String(file.size)
-      }
+      },
+      timeout: timeoutMs
     }
   );
   const body = parseJsonLoose(response.data);

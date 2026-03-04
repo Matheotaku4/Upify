@@ -75,3 +75,5 @@ Example `options`:
 
 - For `send.now`, the service returns a `file_code`. The app returns the `upload_result` URL.
 - For `rootz.so`, multipart upload is used automatically from 4 MB (configurable with `multipartThreshold`).
+- The UI shows per-host progress bars while uploads are running.
+- The streaming endpoint `POST /api/upload/stream` emits NDJSON events (`start`, `target_start`, `target_result`, `done`).

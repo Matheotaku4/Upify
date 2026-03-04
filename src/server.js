@@ -53,6 +53,32 @@ function parseTargets(value) {
   return [];
 }
 
+function resolveUploadTargets(requestedTargets) {
+  return requestedTargets
+    .map((target) => ({
+      requested: target,
+      normalized: normalizeTarget(target)
+    }))
+    .filter((item) => item.normalized);
+}
+
+function buildTargetResultFromError(normalized, error) {
+  const isUploadError = error instanceof UploadError;
+  return {
+    ok: false,
+    target: normalized,
+    error: error.message || "Unknown error",
+    details: isUploadError ? (error.details || null) : null
+  };
+}
+
+function writeNdjsonLine(res, payload) {
+  if (res.writableEnded || res.destroyed) {
+    return;
+  }
+  res.write(`${JSON.stringify(payload)}\n`);
+}
+
 function createApp() {
   const app = express();
   const upload = multer({ dest: TMP_DIR });
@@ -78,12 +104,7 @@ function createApp() {
       requestedTargets = [...supportedTargets];
     }
 
-    const normalizedTargets = requestedTargets
-      .map((target) => ({
-        requested: target,
-        normalized: normalizeTarget(target)
-      }))
-      .filter((item) => item.normalized);
+    const normalizedTargets = resolveUploadTargets(requestedTargets);
 
     if (!normalizedTargets.length) {
       await fs.unlink(file.path).catch(() => {});
@@ -114,13 +135,7 @@ function createApp() {
               raw: uploadResult.raw || null
             };
           } catch (error) {
-            const isUploadError = error instanceof UploadError;
-            results[requested] = {
-              ok: false,
-              target: normalized,
-              error: error.message || "Unknown error",
-              details: isUploadError ? (error.details || null) : null
-            };
+            results[requested] = buildTargetResultFromError(normalized, error);
           }
         })
       );
@@ -133,6 +148,108 @@ function createApp() {
         },
         results
       });
+    } finally {
+      await fs.unlink(file.path).catch(() => {});
+    }
+  });
+
+  app.post("/api/upload/stream", upload.single("file"), async (req, res) => {
+    const file = req.file;
+
+    if (!file) {
+      res.status(400).json({ error: "No file received (expected field: file)." });
+      return;
+    }
+
+    let requestedTargets = parseTargets(req.body.targets);
+    if (!requestedTargets.length) {
+      requestedTargets = [...supportedTargets];
+    }
+
+    const normalizedTargets = resolveUploadTargets(requestedTargets);
+    if (!normalizedTargets.length) {
+      await fs.unlink(file.path).catch(() => {});
+      res.status(400).json({
+        error: "No valid target selected.",
+        supportedTargets
+      });
+      return;
+    }
+
+    const optionsByTarget = parseJsonField(req.body.options, {});
+    const results = {};
+
+    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    if (typeof res.flushHeaders === "function") {
+      res.flushHeaders();
+    }
+
+    writeNdjsonLine(res, {
+      type: "start",
+      file: {
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size
+      },
+      targets: normalizedTargets.map((item) => ({
+        requested: item.requested,
+        normalized: item.normalized
+      }))
+    });
+
+    try {
+      await Promise.all(
+        normalizedTargets.map(async ({ requested, normalized }) => {
+          writeNdjsonLine(res, {
+            type: "target_start",
+            requestedTarget: requested,
+            normalizedTarget: normalized
+          });
+
+          const options =
+            optionsByTarget[requested] ||
+            optionsByTarget[normalized] ||
+            {};
+
+          try {
+            const uploadResult = await uploadToTarget(normalized, file, options);
+            const targetResult = {
+              ok: true,
+              target: normalized,
+              url: uploadResult.url || null,
+              raw: uploadResult.raw || null
+            };
+            results[requested] = targetResult;
+            writeNdjsonLine(res, {
+              type: "target_result",
+              requestedTarget: requested,
+              result: targetResult
+            });
+          } catch (error) {
+            const targetResult = buildTargetResultFromError(normalized, error);
+            results[requested] = targetResult;
+            writeNdjsonLine(res, {
+              type: "target_result",
+              requestedTarget: requested,
+              result: targetResult
+            });
+          }
+        })
+      );
+
+      writeNdjsonLine(res, {
+        type: "done",
+        file: {
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size
+        },
+        results
+      });
+      res.end();
     } finally {
       await fs.unlink(file.path).catch(() => {});
     }
@@ -159,7 +276,7 @@ async function startServer(options = {}) {
 
       if (!silent) {
         // eslint-disable-next-line no-console
-        console.log(`MultiUploader en ligne sur ${url}`);
+        console.log(`MultiUploader online at ${url}`);
       }
 
       resolve({ app, server, host: safeHost, port: activePort, url });

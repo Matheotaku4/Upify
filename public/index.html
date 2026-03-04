@@ -75,6 +75,8 @@
           </details>
 
           <button id="submit-btn" type="submit">Start multi-upload</button>
+
+          <div id="host-progress" class="host-progress" aria-live="polite"></div>
         </form>
       </section>
 
@@ -99,7 +101,10 @@
       const copyAllBtn = document.getElementById("copy-all-btn");
       const statusLine = document.getElementById("status-line");
       const resultsList = document.getElementById("results-list");
+      const hostProgress = document.getElementById("host-progress");
       let lastLinks = [];
+      const progressState = new Map();
+      let progressTicker = null;
 
       function selectedTargets() {
         return [...document.querySelectorAll(".targets input:checked")].map((el) => el.value);
@@ -137,6 +142,157 @@
         }
 
         return options;
+      }
+
+      function statusTextFor(state) {
+        if (state.status === "running") return "UPLOADING";
+        if (state.status === "ok") return "DONE";
+        if (state.status === "ko") return "ERROR";
+        return "WAITING";
+      }
+
+      function statusClassFor(state) {
+        if (state.status === "running") return "running";
+        if (state.status === "ok") return "ok";
+        if (state.status === "ko") return "ko";
+        return "pending";
+      }
+
+      function stopProgressTicker() {
+        if (progressTicker) {
+          clearInterval(progressTicker);
+          progressTicker = null;
+        }
+      }
+
+      function renderProgress() {
+        if (!progressState.size) {
+          hostProgress.innerHTML = "";
+          return;
+        }
+
+        const html = [...progressState.entries()]
+          .map(([target, state]) => {
+            const safeProgress = Math.max(0, Math.min(100, Math.round(state.progress || 0)));
+            const rowClass = statusClassFor(state);
+            const statusText = state.message || statusTextFor(state);
+            return `
+              <article class="host-progress-item ${rowClass}">
+                <div class="host-progress-head">
+                  <strong>${target}</strong>
+                  <span>${statusText}</span>
+                </div>
+                <div class="host-progress-track">
+                  <div class="host-progress-fill" style="width:${safeProgress}%"></div>
+                </div>
+              </article>
+            `;
+          })
+          .join("");
+
+        hostProgress.innerHTML = html;
+      }
+
+      function initProgress(targets) {
+        stopProgressTicker();
+        progressState.clear();
+        for (const target of targets) {
+          progressState.set(target, {
+            status: "pending",
+            progress: 0,
+            message: ""
+          });
+        }
+        renderProgress();
+
+        progressTicker = setInterval(() => {
+          let changed = false;
+          for (const [, state] of progressState.entries()) {
+            if (state.status !== "running") {
+              continue;
+            }
+            if (state.progress >= 92) {
+              continue;
+            }
+            state.progress = Math.min(92, state.progress + (Math.random() * 7 + 2));
+            changed = true;
+          }
+          if (changed) {
+            renderProgress();
+          }
+        }, 350);
+      }
+
+      function setProgressState(target, patch) {
+        const current = progressState.get(target);
+        if (!current) {
+          return;
+        }
+        progressState.set(target, { ...current, ...patch });
+        renderProgress();
+      }
+
+      function finalizeProgressAfterFailure() {
+        for (const [target, state] of progressState.entries()) {
+          if (state.status === "ok" || state.status === "ko") {
+            continue;
+          }
+          progressState.set(target, {
+            ...state,
+            status: "ko",
+            progress: 100,
+            message: "FAILED"
+          });
+        }
+        renderProgress();
+      }
+
+      async function uploadWithStream(body, onEvent) {
+        const response = await fetch("/api/upload/stream", {
+          method: "POST",
+          body
+        });
+
+        if (!response.ok) {
+          let payload = null;
+          try {
+            payload = await response.json();
+          } catch (_err) {
+            payload = null;
+          }
+          throw new Error(payload?.error || "Upload request failed");
+        }
+
+        if (!response.body) {
+          throw new Error("Streaming is not available in this runtime.");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          let lineBreak = buffer.indexOf("\n");
+          while (lineBreak !== -1) {
+            const rawLine = buffer.slice(0, lineBreak).trim();
+            buffer = buffer.slice(lineBreak + 1);
+            if (rawLine) {
+              onEvent(JSON.parse(rawLine));
+            }
+            lineBreak = buffer.indexOf("\n");
+          }
+        }
+
+        const trailing = buffer.trim();
+        if (trailing) {
+          onEvent(JSON.parse(trailing));
+        }
       }
 
       function renderResults(payload) {
@@ -220,6 +376,7 @@
         body.append("file", file);
         body.append("targets", JSON.stringify(targets));
         body.append("options", JSON.stringify(options));
+        initProgress(targets);
 
         submitBtn.disabled = true;
         submitBtn.textContent = "Uploading...";
@@ -227,22 +384,44 @@
         resultsList.innerHTML = '<p class="empty">Processing...</p>';
 
         try {
-          const response = await fetch("/api/upload", {
-            method: "POST",
-            body
+          const aggregatedResults = {};
+
+          await uploadWithStream(body, (eventPayload) => {
+            if (eventPayload.type === "target_start") {
+              setProgressState(eventPayload.requestedTarget, {
+                status: "running",
+                progress: 7,
+                message: ""
+              });
+              return;
+            }
+
+            if (eventPayload.type === "target_result") {
+              const result = eventPayload.result || {};
+              aggregatedResults[eventPayload.requestedTarget] = result;
+              setProgressState(eventPayload.requestedTarget, {
+                status: result.ok ? "ok" : "ko",
+                progress: 100,
+                message: result.ok ? "DONE" : "ERROR"
+              });
+              renderResults({ results: aggregatedResults });
+              return;
+            }
+
+            if (eventPayload.type === "done") {
+              renderResults({ results: eventPayload.results || aggregatedResults });
+            }
           });
-          const payload = await response.json();
 
-          if (!response.ok) {
-            throw new Error(payload.error || "Upload request failed");
-          }
-
-          renderResults(payload);
+          stopProgressTicker();
           statusLine.textContent = "Done.";
         } catch (error) {
+          stopProgressTicker();
+          finalizeProgressAfterFailure();
           resultsList.innerHTML = `<p class="empty">Error: ${error.message}</p>`;
           statusLine.textContent = "Failed.";
         } finally {
+          stopProgressTicker();
           submitBtn.disabled = false;
           submitBtn.textContent = "Start multi-upload";
         }

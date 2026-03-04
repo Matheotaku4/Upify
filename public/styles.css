@@ -167,6 +167,78 @@ button[type="submit"]:disabled {
   transform: none;
 }
 
+.host-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.host-progress-item {
+  border: 1px solid #31474f;
+  border-radius: 10px;
+  background: rgba(10, 16, 19, 0.75);
+  padding: 8px 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.host-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.host-progress-head strong {
+  font-size: 0.9rem;
+}
+
+.host-progress-head span {
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  color: #b9d0c9;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.host-progress-track {
+  position: relative;
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #142126;
+}
+
+.host-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  width: 0;
+  transition: width 260ms ease;
+  background: linear-gradient(90deg, #4ca9ff, #58d9c2);
+}
+
+.host-progress-item.pending .host-progress-fill {
+  background: linear-gradient(90deg, #385057, #415f67);
+}
+
+.host-progress-item.running .host-progress-fill {
+  background: linear-gradient(90deg, #37a2ff, #3fd6ac);
+}
+
+.host-progress-item.ok .host-progress-fill {
+  background: linear-gradient(90deg, #2ecf83, #97ef8a);
+}
+
+.host-progress-item.ok .host-progress-head span {
+  color: var(--ok);
+}
+
+.host-progress-item.ko .host-progress-fill {
+  background: linear-gradient(90deg, #ff5e7a, #ff8a8a);
+}
+
+.host-progress-item.ko .host-progress-head span {
+  color: var(--ko);
+}
+
 .results-head {
   display: flex;
   justify-content: space-between;

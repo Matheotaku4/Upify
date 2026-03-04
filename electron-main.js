@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, shell } = require("electron");
 const { startServer, stopServer } = require("./src/server");
 
 let mainWindow = null;
@@ -27,7 +27,21 @@ async function createMainWindow() {
     }
   });
 
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  const localOrigin = new URL(serverHandle.url).origin;
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (typeof url === "string" && !url.startsWith(localOrigin)) {
+      shell.openExternal(url).catch(() => {});
+    }
+    return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (typeof url === "string" && !url.startsWith(localOrigin)) {
+      event.preventDefault();
+      shell.openExternal(url).catch(() => {});
+    }
+  });
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
