@@ -26,7 +26,7 @@ Clone the repository
 ```bash
 git clone https://github.com/Matheotaku4/multiuploader.git
 ```
-
+Next,
 ```bash
 npm install
 ```
