@@ -29,6 +29,8 @@ Local web app to upload one file to multiple hosts in parallel:
 
 ## Installation
 
+Download the exe : [![Release](https://img.shields.io/github/v/release/Matheotaku4/Upify?color=blue&logo=github)](https://github.com/Matheotaku4/Upify/releases)
+
 Clone the repository 
 ```bash
 git clone https://github.com/Matheotaku4/upify.git
