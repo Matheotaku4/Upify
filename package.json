@@ -1,7 +1,7 @@
 {
-  "name": "multiupload",
-  "version": "1.0.4",
-  "description": "Multi-uploader to multiple file hosts",
+  "name": "upify",
+  "version": "1.0.5",
+  "description": "Upify multi-host uploader",
   "main": "electron-main.js",
   "bin": "src/server.js",
   "scripts": {
@@ -10,7 +10,7 @@
     "dev:desktop": "electron .",
     "build:exe": "electron-builder --win portable",
     "build:release": "electron-builder --win portable nsis",
-    "build:cli-exe": "pkg . --targets node18-win-x64 --output dist/multiuploader.exe"
+    "build:cli-exe": "pkg . --targets node18-win-x64 --output dist/upify.exe"
   },
   "engines": {
     "node": ">=18"
@@ -27,8 +27,8 @@
     "pkg": "^5.8.1"
   },
   "build": {
-    "appId": "com.multiupload.desktop",
-    "productName": "MultiUploader",
+    "appId": "com.upify.desktop",
+    "productName": "Upify",
     "directories": {
       "output": "dist-electron"
     },

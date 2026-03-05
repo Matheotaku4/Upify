@@ -66,8 +66,12 @@ npm run build:exe
 Generated file:
 
 ```text
-dist-electron/MultiUploader.exe
+dist-electron/Upify.exe
 ```
+
+## Documentation
+
+- [API Guide](./API.md): explains where to get API keys/tokens and whether each one is required.
 
 ## Local API
 

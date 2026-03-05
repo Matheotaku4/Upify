@@ -20,7 +20,7 @@ async function createMainWindow() {
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: "#10131a",
+    backgroundColor: "#11122b",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -33,6 +33,13 @@ async function createMainWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (typeof url === "string" && !url.startsWith(localOrigin)) {
       shell.openExternal(url).catch(() => {});
+      return { action: "deny" };
+    }
+    if (typeof url === "string") {
+      const parsed = new URL(url);
+      if (parsed.pathname === "/API.md") {
+        shell.openExternal(url).catch(() => {});
+      }
     }
     return { action: "deny" };
   });
@@ -70,7 +77,7 @@ app.whenReady().then(async () => {
     await createMainWindow();
   } catch (error) {
     const message = error?.message || String(error);
-    dialog.showErrorBox("Startup failed", `The local server could not start.\n\n${message}`);
+    dialog.showErrorBox("Upify startup failed", `The local server could not start.\n\n${message}`);
     await shutdownServer();
     app.quit();
   }

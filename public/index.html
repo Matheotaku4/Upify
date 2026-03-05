@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MultiUploader</title>
+    <title>Upify</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -17,7 +17,7 @@
     <main class="shell">
       <section class="hero">
         <p class="kicker">Upload multiple services</p>
-        <h1>MultiUploader</h1>
+        <h1>Upify</h1>
         <p class="subtitle">
           Upload one file to Gofile, 1fichier, Rootz, Send.now, Buzzheavier,
           Ranoz, Vikingfile, FileMirage, and Pixeldrain in one click.
@@ -46,8 +46,15 @@
             </div>
           </div>
 
+          <div class="advanced-title-row">
+            <span>Advanced options (optional)</span>
+            <a id="api-help-link" class="api-help-btn" href="/API.md" target="_blank" rel="noopener noreferrer">
+              API help
+            </a>
+          </div>
+
           <details class="advanced">
-            <summary>Advanced options (optional)</summary>
+            <summary>Show or hide options</summary>
 
             <div class="field-grid">
               <label class="field">
@@ -137,6 +144,7 @@
       let progressTicker = null;
       let preferencesReady = false;
       let preferenceSaveTimer = null;
+      let notificationPermissionAsked = false;
 
       function selectedTargets() {
         return targetInputs.filter((el) => el.checked).map((el) => el.value);
@@ -237,6 +245,48 @@
           // Keep default UI state if preferences cannot be loaded.
         } finally {
           preferencesReady = true;
+        }
+      }
+
+      async function requestNotificationPermission() {
+        if (!("Notification" in window)) {
+          return;
+        }
+        if (Notification.permission === "granted" || Notification.permission === "denied") {
+          return;
+        }
+        if (notificationPermissionAsked) {
+          return;
+        }
+        notificationPermissionAsked = true;
+        try {
+          await Notification.requestPermission();
+        } catch (_err) {
+          // Ignore permission request errors.
+        }
+      }
+
+      function summarizeUploadResults(resultsByTarget, totalTargets) {
+        const results = Object.values(resultsByTarget || {});
+        const okCount = results.filter((entry) => entry && entry.ok).length;
+        const koCount = Math.max(0, totalTargets - okCount);
+        return { total: totalTargets, okCount, koCount };
+      }
+
+      function notifyUploadFinished(fileName, summary) {
+        if (!("Notification" in window)) {
+          return;
+        }
+        if (Notification.permission !== "granted") {
+          return;
+        }
+        const label = `${summary.okCount}/${summary.total} succeeded, ${summary.koCount} failed`;
+        try {
+          new Notification("Upify upload complete", {
+            body: `${fileName}: ${label}`
+          });
+        } catch (_err) {
+          // Ignore notification errors.
         }
       }
 
@@ -538,6 +588,7 @@
         body.append("targets", JSON.stringify(targets));
         body.append("options", JSON.stringify(options));
         initProgress(targets);
+        await requestNotificationPermission();
 
         submitBtn.disabled = true;
         submitBtn.textContent = "Uploading...";
@@ -546,6 +597,7 @@
 
         try {
           const aggregatedResults = {};
+          let finalResults = null;
 
           await uploadWithStream(body, (eventPayload) => {
             if (eventPayload.type === "target_start") {
@@ -570,17 +622,26 @@
             }
 
             if (eventPayload.type === "done") {
-              renderResults({ results: eventPayload.results || aggregatedResults });
+              finalResults = eventPayload.results || aggregatedResults;
+              renderResults({ results: finalResults });
             }
           });
 
           stopProgressTicker();
           statusLine.textContent = "Done.";
+          notifyUploadFinished(
+            file.name,
+            summarizeUploadResults(finalResults || aggregatedResults, targets.length)
+          );
         } catch (error) {
           stopProgressTicker();
           finalizeProgressAfterFailure();
           resultsList.innerHTML = `<p class="empty">Error: ${error.message}</p>`;
           statusLine.textContent = "Failed.";
+          notifyUploadFinished(
+            file.name,
+            { total: targets.length, okCount: 0, koCount: targets.length }
+          );
         } finally {
           stopProgressTicker();
           submitBtn.disabled = false;

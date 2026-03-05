@@ -1,14 +1,14 @@
 :root {
-  --bg: #070c0b;
-  --bg-2: #111819;
-  --panel: #121c1e;
-  --panel-border: #2d4147;
-  --text: #e7f8f2;
-  --muted: #8fb4aa;
-  --ok: #38d39f;
+  --bg: #090d26;
+  --bg-2: #1a1044;
+  --panel: #171a3a;
+  --panel-border: #3d4aa3;
+  --text: #edf2ff;
+  --muted: #aeb7e8;
+  --ok: #49db9f;
   --ko: #ff6b6b;
-  --accent: #f7b733;
-  --accent-2: #1bc7a3;
+  --accent: #6c8dff;
+  --accent-2: #a66dff;
 }
 
 html {
@@ -18,7 +18,7 @@ html {
 html,
 body {
   scrollbar-width: thin;
-  scrollbar-color: #3a6671 #0b1417;
+  scrollbar-color: #6a79d9 #0f1333;
 }
 
 *::-webkit-scrollbar {
@@ -27,17 +27,17 @@ body {
 }
 
 *::-webkit-scrollbar-track {
-  background: #0b1417;
+  background: #0f1333;
 }
 
 *::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #2d5a66, #5ab3a7);
-  border: 2px solid #0b1417;
+  background: linear-gradient(180deg, #5c76ff, #9d68ff);
+  border: 2px solid #0f1333;
   border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #3b7280, #73cfb8);
+  background: linear-gradient(180deg, #7590ff, #b487ff);
 }
 
 * {
@@ -48,8 +48,8 @@ body {
   margin: 0;
   color: var(--text);
   background:
-    radial-gradient(circle at 15% 10%, rgba(247, 183, 51, 0.2), transparent 30%),
-    radial-gradient(circle at 85% 15%, rgba(27, 199, 163, 0.25), transparent 35%),
+    radial-gradient(circle at 15% 10%, rgba(108, 141, 255, 0.3), transparent 35%),
+    radial-gradient(circle at 85% 15%, rgba(166, 109, 255, 0.28), transparent 36%),
     linear-gradient(160deg, var(--bg), var(--bg-2));
   min-height: 100vh;
   font-family: "Space Grotesk", sans-serif;
@@ -95,7 +95,7 @@ body {
 .panel {
   border: 1px solid var(--panel-border);
   border-radius: 16px;
-  background: linear-gradient(180deg, rgba(16, 25, 27, 0.92), rgba(12, 18, 20, 0.92));
+  background: linear-gradient(180deg, rgba(19, 24, 54, 0.92), rgba(15, 18, 42, 0.92));
   backdrop-filter: blur(4px);
   padding: 16px;
 }
@@ -119,8 +119,8 @@ input,
 select {
   width: 100%;
   border-radius: 10px;
-  border: 1px solid #385057;
-  background: #0d1416;
+  border: 1px solid #4a5fc2;
+  background: #13173a;
   color: var(--text);
   padding: 10px 12px;
   font-family: "IBM Plex Mono", monospace;
@@ -128,7 +128,7 @@ select {
 
 input:focus,
 select:focus {
-  outline: 2px solid rgba(247, 183, 51, 0.4);
+  outline: 2px solid rgba(166, 109, 255, 0.45);
   outline-offset: 1px;
 }
 
@@ -139,13 +139,13 @@ select:focus {
 }
 
 .targets label {
-  border: 1px solid #33484f;
+  border: 1px solid #4456ad;
   border-radius: 10px;
   padding: 9px 11px;
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #0d1517;
+  background: #14183d;
 }
 
 .targets input {
@@ -154,16 +154,44 @@ select:focus {
   accent-color: var(--accent-2);
 }
 
+.advanced-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.advanced-title-row > span {
+  color: #d3dbff;
+  font-size: 0.92rem;
+}
+
+.api-help-btn {
+  border: 1px solid #5466d6;
+  color: #d6ddff;
+  background: #151a44;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  text-decoration: none;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.api-help-btn:hover {
+  border-color: #7d6eff;
+  color: #f0ebff;
+}
+
 .advanced {
-  border: 1px dashed #355158;
+  border: 1px dashed #5a63c9;
   border-radius: 12px;
   padding: 12px;
-  background: rgba(15, 24, 26, 0.7);
+  background: rgba(18, 23, 53, 0.75);
 }
 
 .advanced summary {
   cursor: pointer;
-  color: #bed8d0;
+  color: #cdd4ff;
 }
 
 .field-grid {
@@ -179,15 +207,15 @@ button[type="submit"] {
   padding: 12px 14px;
   font-weight: 700;
   letter-spacing: 0.01em;
-  color: #151100;
-  background: linear-gradient(90deg, var(--accent), #ffd06c 45%, #b8ffa8);
+  color: #f3f6ff;
+  background: linear-gradient(90deg, #5d7dff, #7f7dff 45%, #b56dff);
   cursor: pointer;
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
 button[type="submit"]:hover {
   transform: translateY(-1px);
-  box-shadow: 0 12px 22px rgba(255, 208, 108, 0.2);
+  box-shadow: 0 12px 22px rgba(128, 124, 255, 0.28);
 }
 
 button[type="submit"]:disabled {
@@ -202,9 +230,9 @@ button[type="submit"]:disabled {
 }
 
 .host-progress-item {
-  border: 1px solid #31474f;
+  border: 1px solid #4356b7;
   border-radius: 10px;
-  background: rgba(10, 16, 19, 0.75);
+  background: rgba(16, 20, 49, 0.75);
   padding: 8px 10px;
   display: grid;
   gap: 7px;
@@ -224,7 +252,7 @@ button[type="submit"]:disabled {
 .host-progress-head span {
   font-size: 0.76rem;
   letter-spacing: 0.06em;
-  color: #b9d0c9;
+  color: #c7cdf5;
   font-family: "IBM Plex Mono", monospace;
 }
 
@@ -233,7 +261,7 @@ button[type="submit"]:disabled {
   height: 7px;
   border-radius: 999px;
   overflow: hidden;
-  background: #142126;
+  background: #1a2359;
 }
 
 .host-progress-fill {
@@ -241,15 +269,15 @@ button[type="submit"]:disabled {
   border-radius: 999px;
   width: 0;
   transition: width 260ms ease;
-  background: linear-gradient(90deg, #4ca9ff, #58d9c2);
+  background: linear-gradient(90deg, #5b84ff, #a36bff);
 }
 
 .host-progress-item.pending .host-progress-fill {
-  background: linear-gradient(90deg, #385057, #415f67);
+  background: linear-gradient(90deg, #3f4d88, #535fa0);
 }
 
 .host-progress-item.running .host-progress-fill {
-  background: linear-gradient(90deg, #37a2ff, #3fd6ac);
+  background: linear-gradient(90deg, #4e80ff, #8f72ff);
 }
 
 .host-progress-item.ok .host-progress-fill {
@@ -261,7 +289,7 @@ button[type="submit"]:disabled {
 }
 
 .host-progress-item.ko .host-progress-fill {
-  background: linear-gradient(90deg, #ff5e7a, #ff8a8a);
+  background: linear-gradient(90deg, #ff5e7a, #b077ff);
 }
 
 .host-progress-item.ko .host-progress-head span {
@@ -282,9 +310,9 @@ button[type="submit"]:disabled {
 }
 
 #copy-all-btn {
-  border: 1px solid #36525a;
-  background: #0f1a1c;
-  color: #cde8df;
+  border: 1px solid #4c5dc2;
+  background: #141940;
+  color: #dde3ff;
   border-radius: 8px;
   padding: 6px 10px;
   font-size: 0.82rem;
@@ -319,10 +347,10 @@ button[type="submit"]:disabled {
 }
 
 .result {
-  border: 1px solid #344e56;
+  border: 1px solid #4759ba;
   border-radius: 11px;
   padding: 10px 11px;
-  background: rgba(13, 21, 23, 0.85);
+  background: rgba(16, 21, 50, 0.85);
 }
 
 .result-top {
@@ -347,16 +375,16 @@ button[type="submit"]:disabled {
 }
 
 .result-body a {
-  color: #9be7ff;
+  color: #9bb0ff;
 }
 
 .result-body pre {
   margin: 8px 0 0;
   padding: 8px;
   border-radius: 8px;
-  border: 1px solid #2f454c;
-  background: #0a1012;
-  color: #a8c3bc;
+  border: 1px solid #4252a8;
+  background: #101432;
+  color: #cad3ff;
   overflow-x: auto;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.76rem;
