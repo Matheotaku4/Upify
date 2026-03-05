@@ -8,7 +8,7 @@
 
 
 > [!WARNING]  
-> This app is vibe coded  
+> This app is vibe coded by gpt-5.3-codex
 
 Local web app to upload one file to multiple hosts in parallel:
 
