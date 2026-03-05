@@ -77,6 +77,13 @@ body {
   line-height: 1.05;
 }
 
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
 .brand-logo {
   width: min(360px, 75vw);
   max-height: 120px;

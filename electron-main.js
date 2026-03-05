@@ -2,6 +2,11 @@ const { app, BrowserWindow, dialog, shell } = require("electron");
 const { execFile } = require("child_process");
 const { startServer, stopServer } = require("./src/server");
 
+const gotInstanceLock = app.requestSingleInstanceLock();
+if (!gotInstanceLock) {
+  app.quit();
+}
+
 let mainWindow = null;
 let serverHandle = null;
 let isQuitting = false;
@@ -100,6 +105,16 @@ async function shutdownServer() {
   serverHandle = null;
   await stopServer(serverRef);
 }
+
+app.on("second-instance", (_event, argv) => {
+  if (!mainWindow) {
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.focus();
+});
 
 app.whenReady().then(async () => {
   try {

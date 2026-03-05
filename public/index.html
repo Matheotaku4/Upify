@@ -16,12 +16,7 @@
     <div class="bg-glow"></div>
     <main class="shell">
       <section class="hero">
-        <p class="kicker">Upload multiple services</p>
         <img class="brand-logo" src="/logo.png" alt="Upify" />
-        <p class="subtitle">
-          Upload one file to Gofile, 1fichier, Rootz, Send.now, Buzzheavier,
-          Ranoz, Vikingfile, FileMirage, and Pixeldrain in one click.
-        </p>
         <p id="upload-stats" class="upload-stats">You have uploaded 0.00 Go</p>
       </section>
 
@@ -119,6 +114,7 @@
         <div class="results-head">
           <h2>Results</h2>
           <div class="results-actions">
+            <button id="save-links-btn" type="button" disabled>Save links (.txt)</button>
             <button id="copy-all-btn" type="button" disabled>Copy all links</button>
             <p id="status-line">Ready.</p>
           </div>
@@ -135,6 +131,7 @@
       const submitBtn = document.getElementById("submit-btn");
       const cancelAllBtn = document.getElementById("cancel-all-btn");
       const copyAllBtn = document.getElementById("copy-all-btn");
+      const saveLinksBtn = document.getElementById("save-links-btn");
       const statusLine = document.getElementById("status-line");
       const resultsList = document.getElementById("results-list");
       const hostProgress = document.getElementById("host-progress");
@@ -159,6 +156,7 @@
       let notificationPermissionAsked = false;
       let totalUploadedBytes = 0;
       let currentUpload = null;
+      let lastFileName = "upify";
 
       function selectedTargets() {
         return targetInputs.filter((el) => el.checked).map((el) => el.value);
@@ -577,7 +575,7 @@
         lastLinks = entries
           .map(([, result]) => (result && result.ok ? result.url : null))
           .filter((url) => typeof url === "string" && url.length > 0);
-        copyAllBtn.disabled = lastLinks.length === 0;
+        updateLinkActions();
 
         if (!entries.length) {
           resultsList.innerHTML = '<p class="empty">No results.</p>';
@@ -619,6 +617,12 @@
           .join("");
 
         resultsList.innerHTML = html;
+      }
+
+      function updateLinkActions() {
+        const hasLinks = lastLinks.length > 0;
+        copyAllBtn.disabled = !hasLinks;
+        saveLinksBtn.disabled = !hasLinks;
       }
 
       copyAllBtn.addEventListener("click", async () => {
@@ -663,6 +667,32 @@
         cancelUpload(target);
       });
 
+      saveLinksBtn.addEventListener("click", () => {
+        if (!lastLinks.length) {
+          return;
+        }
+        const now = new Date();
+        const timestamp = now.toLocaleString("en-GB", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false
+        });
+        const header = `File: ${lastFileName}\nDate: ${timestamp}\n\n`;
+        const content = `${header}${lastLinks.join("\n")}`;
+        const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${lastFileName || "links"}-${timestamp.replace(/[: ]/g, "-")}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+      });
+
       cancelAllBtn.addEventListener("click", () => {
         if (!currentUpload?.jobId) {
           return;
@@ -681,6 +711,7 @@
         event.preventDefault();
 
         const file = fileInput.files[0];
+        lastFileName = file?.name || "upify";
         const targets = selectedTargets();
 
         if (!file) {

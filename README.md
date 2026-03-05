@@ -98,6 +98,14 @@ Example `options`:
 }
 ```
 
+## Features
+
+- **Branding & docs**: `logo.png` is rendered in the hero; the API help button opens the GitHub-hosted guide (`/API.md`) for API key hints.
+- **Stats & history**: the hero shows “You have uploaded x Go” powered by `/api/stats`; stats update automatically when uploads finish.
+- **Cancellations**: per-host “Cancel” buttons plus a global “Cancel all” stop the streaming upload request via `/api/upload/cancel`.
+- **Exporting results**: new “Save links (.txt)” button writes the collected URLs with filename + timestamp.
+- **Windows integration**: icon assets replaced with `icon.png`/`icon.ico`, the installer uses them, and the Windows “Envoyer a Upify” right-click entry launches/focuses Upify.
+
 ## Notes
 
 - For `send.now`, the service returns a `file_code`. The app returns the `upload_result` URL.
