@@ -29,7 +29,8 @@ const supportedTargets = [
   "ranoz",
   "vikingfile",
   "filemirage",
-  "pixeldrain"
+  "pixeldrain",
+  "bowfile"
 ];
 
 const targetAliases = {
@@ -51,7 +52,10 @@ const targetAliases = {
   filemirage: "filemirage",
   "filemirage.com": "filemirage",
   pixeldrain: "pixeldrain",
-  "pixeldrain.com": "pixeldrain"
+  "pixeldrain.com": "pixeldrain",
+  bowfile: "bowfile",
+  "bowfile.com": "bowfile",
+  "www.bowfile.com": "bowfile"
 };
 
 class UploadError extends Error {
@@ -990,6 +994,67 @@ async function uploadToPixeldrain(file, options = {}) {
   );
 }
 
+async function uploadToBowFile(file, options = {}) {
+  const signal = options.signal || null;
+  const key1 = String(options.key1 || "").trim();
+  const key2 = String(options.key2 || "").trim();
+  const folderId = String(options.folderId || "").trim();
+
+  if (!key1 || !key2) {
+    throw new UploadError("BowFile: both API keys (key1 and key2) are required.");
+  }
+
+  const authForm = new FormData();
+  authForm.append("key1", key1);
+  authForm.append("key2", key2);
+
+  const authResp = await http.post("https://bowfile.com/api/v2/authorize", authForm, {
+    headers: authForm.getHeaders(),
+    ...mergeSignal({}, signal)
+  });
+  const authBody = parseJsonLoose(authResp.data);
+  if (authResp.status < 200 || authResp.status >= 300 || authBody?._status !== "success") {
+    throw makeErrorFromResponse("BowFile: authorization failed", authResp, authBody);
+  }
+
+  const accessToken = String(authBody?.data?.access_token || "").trim();
+  const accountId = String(authBody?.data?.account_id || "").trim();
+  if (!accessToken || !accountId) {
+    throw new UploadError("BowFile: authorization did not return tokens", authBody);
+  }
+
+  const uploadForm = new FormData();
+  uploadForm.append("access_token", accessToken);
+  uploadForm.append("account_id", accountId);
+  if (folderId) {
+    uploadForm.append("folder_id", folderId);
+  }
+  uploadForm.append("upload_file", fs.createReadStream(file.path), {
+    filename: file.originalname,
+    contentType: file.mimetype || "application/octet-stream"
+  });
+
+  const uploadResp = await http.post("https://bowfile.com/api/v2/file/upload", uploadForm, {
+    headers: uploadForm.getHeaders(),
+    ...mergeSignal({}, signal)
+  });
+  const uploadBody = parseJsonLoose(uploadResp.data);
+  const fileEntry = Array.isArray(uploadBody?.data) ? uploadBody.data[0] : null;
+  if (
+    uploadResp.status >= 200 &&
+    uploadResp.status < 300 &&
+    fileEntry &&
+    fileEntry.url
+  ) {
+    return {
+      url: fileEntry.url,
+      raw: uploadBody
+    };
+  }
+
+  throw makeErrorFromResponse("BowFile: upload failed", uploadResp, uploadBody);
+}
+
 async function uploadToTarget(target, file, options = {}) {
   const normalized = normalizeTarget(target);
   if (!normalized) {
@@ -1015,8 +1080,10 @@ async function uploadToTarget(target, file, options = {}) {
       return uploadToFilemirage(file, options);
     case "pixeldrain":
       return uploadToPixeldrain(file, options);
+    case "bowfile":
+      return uploadToBowFile(file, options);
     default:
-      throw new UploadError(`Unsupported target: ${target}`);
+      throw new UploadError(`Unknown target: ${target}`);
   }
 }
 

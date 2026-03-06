@@ -39,6 +39,7 @@
               <label><input type="checkbox" value="vikingfile" checked /> vikingfile.com</label>
               <label><input type="checkbox" value="filemirage" checked /> filemirage.com</label>
               <label><input type="checkbox" value="pixeldrain" checked /> pixeldrain.com</label>
+              <label><input type="checkbox" value="bowfile" checked /> BowFile</label>
             </div>
           </div>
 
@@ -98,6 +99,21 @@
                 <span>Pixeldrain API key (required)</span>
                 <input id="opt-pixeldrain-key" type="text" placeholder="API key" />
               </label>
+
+              <label class="field">
+                <span>BowFile Key 1</span>
+                <input id="opt-bowfile-key1" type="text" placeholder="Key 1" />
+              </label>
+
+              <label class="field">
+                <span>BowFile Key 2</span>
+                <input id="opt-bowfile-key2" type="text" placeholder="Key 2" />
+              </label>
+
+              <label class="field">
+                <span>BowFile folder ID (optional)</span>
+                <input id="opt-bowfile-folder" type="text" placeholder="Folder ID" />
+              </label>
             </div>
           </details>
 
@@ -146,7 +162,10 @@
         "opt-sendnow-email",
         "opt-viking-user",
         "opt-filemirage-token",
-        "opt-pixeldrain-key"
+        "opt-pixeldrain-key",
+        "opt-bowfile-key1",
+        "opt-bowfile-key2",
+        "opt-bowfile-folder"
       ];
       let lastLinks = [];
       const progressState = new Map();
@@ -335,7 +354,8 @@
           sendnow: {},
           vikingfile: {},
           filemirage: {},
-          pixeldrain: {}
+          pixeldrain: {},
+          bowfile: {}
         };
 
         const gofileToken = document.getElementById("opt-gofile-token").value.trim();
@@ -346,6 +366,9 @@
         const vikingUser = document.getElementById("opt-viking-user").value.trim();
         const filemirageToken = document.getElementById("opt-filemirage-token").value.trim();
         const pixeldrainKey = document.getElementById("opt-pixeldrain-key").value.trim();
+        const bowfileKey1 = document.getElementById("opt-bowfile-key1").value.trim();
+        const bowfileKey2 = document.getElementById("opt-bowfile-key2").value.trim();
+        const bowfileFolder = document.getElementById("opt-bowfile-folder").value.trim();
 
         if (gofileToken) {
           options.gofile.token = gofileToken;
@@ -370,6 +393,15 @@
         }
         if (pixeldrainKey) {
           options.pixeldrain.apiKey = pixeldrainKey;
+        }
+        if (bowfileKey1) {
+          options.bowfile.key1 = bowfileKey1;
+        }
+        if (bowfileKey2) {
+          options.bowfile.key2 = bowfileKey2;
+        }
+        if (bowfileFolder) {
+          options.bowfile.folderId = bowfileFolder;
         }
 
         return options;

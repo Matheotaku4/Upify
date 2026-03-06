@@ -8,10 +8,7 @@
 
 ![Screenshot](https://files.catbox.moe/8eslbp.png)
 
-> [!WARNING]  
-> This app is vibe coded by gpt-5.3-codex
-
-Local web app to upload one file to multiple hosts in parallel:
+Local desktop/web uploader for sending one file to multiple hosts in parallel:
 
 - `gofile.io`
 - `1fichier.com`
@@ -22,6 +19,7 @@ Local web app to upload one file to multiple hosts in parallel:
 - `vikingfile.com`
 - `filemirage.com`
 - `pixeldrain.com`
+- `bowfile.com`
 
 ## Requirements
 
@@ -30,22 +28,16 @@ Local web app to upload one file to multiple hosts in parallel:
 
 ## Installation
 
-Download the exe : [![Release](https://img.shields.io/github/v/release/Matheotaku4/Upify?color=blue&logo=github)](https://github.com/Matheotaku4/Upify/releases)
+Download the latest binaries from Releases:
 
-or
+[![Release](https://img.shields.io/github/v/release/Matheotaku4/Upify?color=blue&logo=github)](https://github.com/Matheotaku4/Upify/releases)
 
-Clone the repository 
+Or clone and run locally:
+
 ```bash
-git clone https://github.com/Matheotaku4/upify.git
-```
-Next,
-```bash
+git clone https://github.com/Matheotaku4/Upify.git
+cd Upify
 npm install
-```
-
-## Run
-
-```bash
 npm start
 ```
 
@@ -55,35 +47,49 @@ Then open:
 http://localhost:3000
 ```
 
-## Desktop version (.exe)
+## Desktop Build
 
-Build the portable executable (embedded server + integrated window):
+Build portable + setup artifacts:
 
 ```bash
-npm run build:exe
+npm run build:release
 ```
 
-Generated file:
+Main outputs:
 
 ```text
-dist-electron/Upify.exe
+dist-electron/Upify-<version>-portable.exe
+dist-electron/Upify-<version>-setup.exe
 ```
 
 ## Documentation
 
-- [API Guide](./API.md): explains where to get API keys/tokens and whether each one is required.
+- [API Guide](./API.md): where to get API keys/tokens and whether they are required.
+
+## Features
+
+- Per-host parallel upload with detailed result cards.
+- Per-host progress bars and host-level cancellation.
+- Global "Cancel all" for a full running job.
+- "Copy all links" and "Save links (.txt)" actions after upload.
+- Persistent preferences: selected hosts, API fields, advanced panel state.
+- Upload stats counter: "You have uploaded x Go".
+- Desktop mode: local server started in background with an integrated Electron window.
+- Windows notifications when upload is complete.
+- External links open in your default browser.
+- BowFile integration via `/api/v2/authorize` + `/api/v2/file/upload`.
 
 ## Local API
 
 ### `POST /api/upload`
 
-`multipart/form-data` request:
+`multipart/form-data` fields:
 
-- `file`: file to upload
-- `targets`: JSON array of targets (example: `["gofile","1fichier"]`)
-- `options`: JSON object per target (optional)
+- `file`: uploaded file
+- `targets`: JSON array (example: `["gofile","1fichier"]`)
+- `options`: JSON object keyed by target (optional)
 
-Example `options`:
+Example:
 
 ```json
 {
@@ -94,22 +100,7 @@ Example `options`:
   "sendnow": { "link_rcpt": "mail@example.com" },
   "vikingfile": { "user": "" },
   "filemirage": { "apiToken": "..." },
-  "pixeldrain": { "apiKey": "..." }
+  "pixeldrain": { "apiKey": "..." },
+  "bowfile": { "key1": "...", "key2": "...", "folderId": "optional" }
 }
 ```
-
-## Features
-
-- **Branding & docs**: `logo.png` is rendered in the hero; the API help button opens the GitHub-hosted guide (`/API.md`) for API key hints.
-- **Stats & history**: the hero shows “You have uploaded x Go” powered by `/api/stats`; stats update automatically when uploads finish.
-- **Cancellations**: per-host “Cancel” buttons plus a global “Cancel all” stop the streaming upload request via `/api/upload/cancel`.
-- **Exporting results**: new “Save links (.txt)” button writes the collected URLs with filename + timestamp.
-- **Windows integration**: icon assets replaced with `icon.png`/`icon.ico`, the installer uses them, and the Windows “Envoyer a Upify” right-click entry launches/focuses Upify.
-
-## Notes
-
-- For `send.now`, the service returns a `file_code`. The app returns the `upload_result` URL.
-- For `rootz.so`, multipart upload is used automatically from 4 MB (configurable with `multipartThreshold`).
-- For `pixeldrain.com`, API upload requires an API key (`/user/api_keys`).
-- The UI shows per-host progress bars while uploads are running.
-- The streaming endpoint `POST /api/upload/stream` emits NDJSON events (`start`, `target_start`, `target_result`, `done`).

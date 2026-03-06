@@ -15,6 +15,7 @@ This page explains which Advanced Options in Upify need an API key or token, whe
 | `vikingfile.com` | `Vikingfile user` | No | Optional if you use a specific user/path flow |
 | `filemirage.com` | `FileMirage API token` | No | Yes, if your account/server requires auth |
 | `pixeldrain.com` | `Pixeldrain API key` | **Yes** | **Required for API upload** |
+| `bowfile.com` | `BowFile Key 1 / Key 2` | **Yes** | **Required for authenticated uploads** |
 
 ## Host-by-Host Details
 
@@ -86,6 +87,17 @@ How to get it:
 1. Sign in to Pixeldrain.
 2. Open `https://pixeldrain.com/user/api_keys`.
 3. Create/copy an API key and paste it in Upify.
+
+### BowFile (`bowfile.com`)
+- Options: `BowFile Key 1`, `BowFile Key 2`, `BowFile folder ID` (optional)
+- Required: **Yes** (both keys are mandatory; the folder ID is optional)
+- Uploads use `/api/v2/authorize` to generate an access token before `POST /api/v2/file/upload`.
+
+How to get the keys:
+1. Log in to BowFile.
+2. Visit your account dashboard or the API/key management section.
+3. Copy **Key 1** and **Key 2** into the corresponding Upify fields.
+4. Set a `folder_id` if you want files stored in a specific folder; otherwise leave blank for the default target.
 
 ## Security Notes
 
