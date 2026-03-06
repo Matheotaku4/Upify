@@ -19,6 +19,7 @@ Local desktop/web uploader for sending one file to multiple hosts in parallel:
 - `filemirage.com`
 - `pixeldrain.com`
 - `bowfile.com`
+- `akirabox.com`
 
 ## Requirements
 
