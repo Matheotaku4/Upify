@@ -1,14 +1,21 @@
 {
   "name": "upify",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Upify multi-host uploader",
   "main": "electron-main.js",
   "bin": "src/server.js",
+  "author": {
+    "name": "Matheotaku4",
+    "email": "matheotaku4@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/Matheotaku4/Upify",
+  "desktopName": "upify.desktop",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
     "dev:desktop": "electron .",
-    "build:exe": "electron-builder --win portable",
+    "build:win": "electron-builder --win portable nsis",
+    "build:linux": "electron-builder --linux",
     "build:release": "electron-builder --win portable nsis",
     "build:cli-exe": "pkg . --targets node18-win-x64 --output dist/upify.exe"
   },
@@ -16,14 +23,14 @@
     "node": ">=18"
   },
   "dependencies": {
-    "axios": "^1.8.4",
-    "express": "^4.21.2",
-    "form-data": "^4.0.2",
-    "multer": "^1.4.5-lts.1"
+    "axios": "^1.21.0",
+    "express": "^4.22.3",
+    "form-data": "^4.0.6",
+    "multer": "^2.5.0"
   },
   "devDependencies": {
-    "electron": "^36.0.0",
-    "electron-builder": "^26.0.12",
+    "electron": "^45.2.2",
+    "electron-builder": "^26.18.0",
     "pkg": "^5.8.1"
   },
   "build": {
@@ -56,6 +63,35 @@
           ]
         }
       ]
+    },
+    "linux": {
+      "icon": "icon.png",
+      "category": "Utility",
+      "syncDesktopName": true,
+      "synopsis": "Upload one file to multiple file hosts in parallel",
+      "description": "Upify is a local desktop and web uploader that sends a single file to many file hosting services in parallel.",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "appImage": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "deb": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "maintainer": "Matheotaku4 <matheotaku4@users.noreply.github.com>",
+      "category": "utility"
     },
     "portable": {
       "artifactName": "${productName}-${version}-portable.${ext}"

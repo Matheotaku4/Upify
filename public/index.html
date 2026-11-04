@@ -35,12 +35,13 @@
               <label><input type="checkbox" value="rootz" checked /> rootz.so</label>
               <label><input type="checkbox" value="sendnow" checked /> send.now</label>
               <label><input type="checkbox" value="buzzheavier" checked /> buzzheavier.com</label>
-              <label><input type="checkbox" value="ranoz" checked /> ranoz.gg</label>
               <label><input type="checkbox" value="vikingfile" checked /> vikingfile.com</label>
               <label><input type="checkbox" value="filemirage" checked /> filemirage.com</label>
               <label><input type="checkbox" value="pixeldrain" checked /> pixeldrain.com</label>
               <label><input type="checkbox" value="bowfile" checked /> BowFile</label>
-              <label><input type="checkbox" value="akirabox" checked /> akirabox.com</label>
+              <label><input type="checkbox" value="akirabox" checked /> akirabox.to</label>
+              <label><input type="checkbox" value="0807st" checked /> 0807.st</label>
+              <label><input type="checkbox" value="dropdrive" checked /> dropdrive.rip</label>
             </div>
           </div>
 
@@ -117,8 +118,28 @@
               </label>
 
               <label class="field">
-                <span>AkiraBox API key (required)</span>
+                <span>AkiraBox API key (required, Premium)</span>
                 <input id="opt-akirabox-apikey" type="text" placeholder="API key" />
+              </label>
+
+              <label class="field">
+                <span>0807.st partner token (optional)</span>
+                <input id="opt-0807-token" type="text" placeholder="Bearer token" />
+              </label>
+
+              <label class="field">
+                <span>0807.st expiry in hours (optional)</span>
+                <input id="opt-0807-expiry" type="text" placeholder="0 = never (1, 24, 168, 720)" />
+              </label>
+
+              <label class="field">
+                <span>0807.st password (optional)</span>
+                <input id="opt-0807-password" type="text" placeholder="Password" />
+              </label>
+
+              <label class="field">
+                <span>DropDrive account token (optional)</span>
+                <input id="opt-dropdrive-token" type="text" placeholder="16-character token" />
               </label>
             </div>
           </details>
@@ -172,7 +193,11 @@
         "opt-bowfile-key1",
         "opt-bowfile-key2",
         "opt-bowfile-folder",
-        "opt-akirabox-apikey"
+        "opt-akirabox-apikey",
+        "opt-0807-token",
+        "opt-0807-expiry",
+        "opt-0807-password",
+        "opt-dropdrive-token"
       ];
       let lastLinks = [];
       const progressState = new Map();
@@ -183,6 +208,15 @@
       let totalUploadedBytes = 0;
       let currentUpload = null;
       let lastFileName = "upify";
+
+      function escapeHtml(value) {
+        return String(value == null ? "" : value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
 
       function selectedTargets() {
         return targetInputs.filter((el) => el.checked).map((el) => el.value);
@@ -363,7 +397,9 @@
           filemirage: {},
           pixeldrain: {},
           bowfile: {},
-          akirabox: {}
+          akirabox: {},
+          "0807st": {},
+          dropdrive: {}
         };
 
         const gofileToken = document.getElementById("opt-gofile-token").value.trim();
@@ -378,6 +414,10 @@
         const bowfileKey2 = document.getElementById("opt-bowfile-key2").value.trim();
         const bowfileFolder = document.getElementById("opt-bowfile-folder").value.trim();
         const akiraboxApiKey = document.getElementById("opt-akirabox-apikey").value.trim();
+        const token0807 = document.getElementById("opt-0807-token").value.trim();
+        const expiry0807 = document.getElementById("opt-0807-expiry").value.trim();
+        const password0807 = document.getElementById("opt-0807-password").value.trim();
+        const dropdriveToken = document.getElementById("opt-dropdrive-token").value.trim();
 
         if (gofileToken) {
           options.gofile.token = gofileToken;
@@ -414,6 +454,18 @@
         }
         if (akiraboxApiKey) {
           options.akirabox.apiKey = akiraboxApiKey;
+        }
+        if (token0807) {
+          options["0807st"].token = token0807;
+        }
+        if (expiry0807) {
+          options["0807st"].expiry = expiry0807;
+        }
+        if (password0807) {
+          options["0807st"].password = password0807;
+        }
+        if (dropdriveToken) {
+          options.dropdrive.token = dropdriveToken;
         }
 
         return options;
@@ -456,15 +508,16 @@
             const canCancel =
               currentUpload &&
               (state.status === "running" || state.status === "pending");
+            const safeTarget = escapeHtml(target);
             const cancelButton = canCancel
-              ? `<button class="host-cancel-btn" type="button" data-target="${target}">Cancel</button>`
+              ? `<button class="host-cancel-btn" type="button" data-target="${safeTarget}">Cancel</button>`
               : "";
             return `
               <article class="host-progress-item ${rowClass}">
                 <div class="host-progress-head">
-                  <strong>${target}</strong>
+                  <strong>${safeTarget}</strong>
                   <div class="host-progress-actions">
-                    <span>${statusText}</span>
+                    <span>${escapeHtml(statusText)}</span>
                     ${cancelButton}
                   </div>
                 </div>
@@ -628,14 +681,15 @@
 
         const html = entries
           .map(([requestedTarget, result]) => {
+            const safeTarget = escapeHtml(requestedTarget);
             if (result.ok) {
               const url = result.url
-                ? `<a href="${result.url}" target="_blank" rel="noopener noreferrer">${result.url}</a>`
+                ? `<a href="${escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(result.url)}</a>`
                 : "<span>No link returned</span>";
               return `
                 <article class="result ok">
                   <div class="result-top">
-                    <strong>${requestedTarget}</strong>
+                    <strong>${safeTarget}</strong>
                     <span>OK</span>
                   </div>
                   <div class="result-body">${url}</div>
@@ -643,16 +697,16 @@
               `;
             }
             const details = result.details
-              ? `<pre>${JSON.stringify(result.details, null, 2)}</pre>`
+              ? `<pre>${escapeHtml(JSON.stringify(result.details, null, 2))}</pre>`
               : "";
             return `
               <article class="result ko">
                 <div class="result-top">
-                  <strong>${requestedTarget}</strong>
+                  <strong>${safeTarget}</strong>
                   <span>ERROR</span>
                 </div>
                 <div class="result-body">
-                  <p>${result.error || "Unknown error"}</p>
+                  <p>${escapeHtml(result.error || "Unknown error")}</p>
                   ${details}
                 </div>
               </article>
@@ -842,7 +896,7 @@
         } catch (error) {
           stopProgressTicker();
           finalizeProgressAfterFailure();
-          resultsList.innerHTML = `<p class="empty">Error: ${error.message}</p>`;
+          resultsList.innerHTML = `<p class="empty">Error: ${escapeHtml(error.message)}</p>`;
           statusLine.textContent = "Failed.";
           notifyUploadFinished(
             file.name,

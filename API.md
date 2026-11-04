@@ -11,11 +11,13 @@ This page explains which Advanced Options in Upify need an API key or token, whe
 | `rootz.so` | `Rootz folderId` | No | Yes, to upload into a specific folder |
 | `send.now` | `Send.now recipient` | No | Only if you want email recipient behavior |
 | `buzzheavier.com` | `Buzzheavier locationId` | No | Optional, mostly advanced routing |
-| `ranoz.gg` | none | No | Not needed in current Upify flow |
 | `vikingfile.com` | `Vikingfile user` | No | Optional if you use a specific user/path flow |
 | `filemirage.com` | `FileMirage API token` | No | Yes, if your account/server requires auth |
 | `pixeldrain.com` | `Pixeldrain API key` | **Yes** | **Required for API upload** |
 | `bowfile.com` | `BowFile Key 1 / Key 2` | **Yes** | **Required for authenticated uploads** |
+| `akirabox.to` | `AkiraBox API key` | **Yes** | **Required, Premium account only** |
+| `0807.st` | `0807.st partner token` | No | Skips proof-of-work and raises limits |
+| `dropdrive.rip` | `DropDrive account token` | No | Stores uploads in your account instead of anonymously |
 
 ## Host-by-Host Details
 
@@ -60,10 +62,6 @@ How to get folderId:
 - Required: No
 - Default value works for normal usage.
 
-### Ranoz (`ranoz.gg`)
-- No API key field in Upify currently.
-- Required: No.
-
 ### Vikingfile (`vikingfile.com`)
 - Option: `Vikingfile user`
 - Required: No
@@ -98,6 +96,62 @@ How to get the keys:
 2. Visit your account dashboard or the API/key management section.
 3. Copy **Key 1** and **Key 2** into the corresponding Upify fields.
 4. Set a `folder_id` if you want files stored in a specific folder; otherwise leave blank for the default target.
+
+### AkiraBox (`akirabox.to`)
+- Option: `AkiraBox API key`
+- Required: **Yes**, and the account must be Premium.
+- The old `akirabox.com/api/files/upload` endpoint is gone; Upify now uses the
+  signed-upload API documented at <https://akirabox.to/developers>:
+  `POST /api/upload/start` → `GET /api/upload/chunk-url` → `PUT {signedUrl}` →
+  `POST /api/upload/complete`.
+- `akirabox.com` redirects to `akirabox.to`; both host names are accepted by Upify.
+
+How to get the key:
+1. Sign in at <https://akirabox.to> on a Premium account.
+2. Open the account/API settings section.
+3. Create an API key and paste it in Upify.
+
+Uploads with two-factor authentication enabled also accept a one-time code
+through the local API (`"otp": "123456"`); the web UI does not expose this field.
+
+### 0807.st (`0807.st`)
+- Options: `0807.st partner token`, `0807.st expiry in hours`, `0807.st password`
+- Required: No. Anonymous uploads work, Upify solves the required proof-of-work
+  (SHA-256, leading zero bits) automatically.
+- Files up to 2 GB use a single POST (`POST /upload`). Larger files switch to the
+  chunked flow (`POST /upload/init` → `POST /upload/chunk` → `POST /upload/finish`).
+- `expiry` is a number of hours (`0` never, `1`, `24`, `168`, `720`).
+- `password` protects the link.
+
+Optional partner token:
+1. Ask 0807.st for a partner token.
+2. Paste it in Upify. A partner token skips the proof-of-work, raises the upload
+   limit (50 GB single POST, 100 GB chunked) and unlocks custom links.
+
+API reference: <https://0807.st/api>
+
+### DropDrive (`dropdrive.rip`)
+- Option: `DropDrive account token`
+- Required: No. Anonymous uploads work, Upify solves the required proof-of-work
+  (SHA-256, leading zero bits) automatically.
+- Uploads are chunked: `GET /api/config`, optional
+  `GET /api/upload/pow-challenge`, `POST /api/upload/init`, then every part is
+  sent to the assigned storage server, and `POST /api/upload/complete` returns
+  the share link.
+- With an account token, the proof-of-work is skipped and files are stored in
+  that account.
+
+How to get the token:
+1. Sign in at <https://dropdrive.rip> (account key/token, Discord, or backup key).
+2. Open the account menu and copy the account/backup key.
+3. Paste it in Upify.
+
+API reference: <https://dropdrive.rip/docs>
+
+## Removed Hosts
+
+- `ranoz.gg`: the domain no longer resolves (NXDOMAIN) and the service is gone,
+  so it was removed from Upify in 1.1.0.
 
 ## Security Notes
 

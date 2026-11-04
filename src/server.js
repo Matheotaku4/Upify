@@ -182,6 +182,20 @@ function countSuccessfulTargets(results) {
   return Object.values(results || {}).filter((entry) => entry && entry.ok).length;
 }
 
+function asyncRoute(handler) {
+  return (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch((error) => {
+      if (res.headersSent) {
+        if (!res.writableEnded) {
+          res.end();
+        }
+        return;
+      }
+      res.status(500).json({ error: error?.message || "Internal server error" });
+    });
+  };
+}
+
 function writeNdjsonLine(res, payload) {
   if (res.writableEnded || res.destroyed) {
     return;
@@ -222,20 +236,20 @@ function createApp(options = {}) {
     res.json({ targets: supportedTargets });
   });
 
-  app.get("/api/stats", async (_req, res) => {
+  app.get("/api/stats", asyncRoute(async (_req, res) => {
     const stats = await readStatsFromDisk(preferencesDir);
     res.json({ stats });
-  });
+  }));
 
-  app.get("/api/preferences", async (_req, res) => {
+  app.get("/api/preferences", asyncRoute(async (_req, res) => {
     const preferences = await readPreferencesFromDisk(preferencesDir);
     res.json({ preferences });
-  });
+  }));
 
-  app.post("/api/preferences", async (req, res) => {
+  app.post("/api/preferences", asyncRoute(async (req, res) => {
     const preferences = await writePreferencesToDisk(preferencesDir, req.body);
     res.json({ ok: true, preferences });
-  });
+  }));
 
   app.post("/api/upload/cancel", (req, res) => {
     const jobId = String(req.body?.jobId || "").trim();
@@ -270,7 +284,7 @@ function createApp(options = {}) {
     res.json({ ok: true, jobId, target: targetNormalized });
   });
 
-  app.post("/api/upload", upload.single("file"), async (req, res) => {
+  app.post("/api/upload", upload.single("file"), asyncRoute(async (req, res) => {
     const file = req.file;
 
     if (!file) {
@@ -334,9 +348,9 @@ function createApp(options = {}) {
     } finally {
       await fs.unlink(file.path).catch(() => {});
     }
-  });
+  }));
 
-  app.post("/api/upload/stream", upload.single("file"), async (req, res) => {
+  app.post("/api/upload/stream", upload.single("file"), asyncRoute(async (req, res) => {
     const file = req.file;
 
     if (!file) {
@@ -377,6 +391,16 @@ function createApp(options = {}) {
         activeUploadJobs.delete(jobId);
       }
     };
+
+    res.on("close", () => {
+      if (res.writableEnded) {
+        return;
+      }
+      jobState.canceledAll = true;
+      for (const controller of jobState.controllers.values()) {
+        controller.abort();
+      }
+    });
 
     res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -488,7 +512,7 @@ function createApp(options = {}) {
       cleanupJob();
       await fs.unlink(file.path).catch(() => {});
     }
-  });
+  }));
 
   return app;
 }

@@ -1,10 +1,12 @@
 const fs = require("fs");
 const fsp = require("fs/promises");
-const path = require("path");
+const { createHash } = require("crypto");
 const axios = require("axios");
 const FormData = require("form-data");
 
 const HTTP_TIMEOUT_MS = 180_000;
+const GIB = 1024 ** 3;
+const MIB = 1024 ** 2;
 
 const http = axios.create({
   timeout: HTTP_TIMEOUT_MS,
@@ -26,12 +28,13 @@ const supportedTargets = [
   "rootz",
   "sendnow",
   "buzzheavier",
-  "ranoz",
   "vikingfile",
   "filemirage",
   "pixeldrain",
   "bowfile",
-  "akirabox"
+  "akirabox",
+  "0807st",
+  "dropdrive"
 ];
 
 const targetAliases = {
@@ -46,8 +49,6 @@ const targetAliases = {
   sendnow: "sendnow",
   buzzheavier: "buzzheavier",
   "buzzheavier.com": "buzzheavier",
-  ranoz: "ranoz",
-  "ranoz.gg": "ranoz",
   vikingfile: "vikingfile",
   "vikingfile.com": "vikingfile",
   filemirage: "filemirage",
@@ -58,7 +59,13 @@ const targetAliases = {
   "bowfile.com": "bowfile",
   "www.bowfile.com": "bowfile",
   akirabox: "akirabox",
-  "akirabox.com": "akirabox"
+  "akirabox.com": "akirabox",
+  "akirabox.to": "akirabox",
+  "0807": "0807st",
+  "0807.st": "0807st",
+  "0807st": "0807st",
+  dropdrive: "dropdrive",
+  "dropdrive.rip": "dropdrive"
 };
 
 class UploadError extends Error {
@@ -100,6 +107,53 @@ function parseJsonLoose(value) {
     }
   }
   return null;
+}
+
+function hasLeadingZeroBits(buffer, bits) {
+  const wanted = Number(bits);
+  if (!Number.isFinite(wanted) || wanted <= 0) {
+    return true;
+  }
+
+  let remaining = Math.floor(wanted);
+  for (const byte of buffer) {
+    if (remaining <= 0) {
+      return true;
+    }
+    if (byte === 0) {
+      remaining -= 8;
+      continue;
+    }
+    return Math.clz32(byte) - 24 >= remaining;
+  }
+  return remaining <= 0;
+}
+
+function throwIfAborted(signal) {
+  if (!signal?.aborted) {
+    return;
+  }
+  const error = new UploadError("Canceled");
+  error.code = "ERR_CANCELED";
+  throw error;
+}
+
+async function solveProofOfWork({ seed, bits, formatNonce, signal = null }) {
+  const targetBits = Math.max(0, Math.min(64, Number(bits) || 0));
+  let nonce = 0;
+
+  for (;;) {
+    throwIfAborted(signal);
+    const formatted = formatNonce(nonce);
+    const digest = createHash("sha256").update(`${seed}${formatted}`).digest();
+    if (hasLeadingZeroBits(digest, targetBits)) {
+      return formatted;
+    }
+    nonce += 1;
+    if ((nonce & 0x3fff) === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
 }
 
 function makeErrorFromResponse(prefix, response, parsedBody = null) {
@@ -685,72 +739,6 @@ async function uploadToSendNow(file, options = {}) {
   throw makeErrorFromResponse("Send.now: unexpected upload response", uploadResp, payload);
 }
 
-async function uploadToFileditch(file, options = {}) {
-  const signal = options.signal || null;
-  const uploadWithName = async (filename, withExplicitMime = false) => {
-    const form = new FormData();
-    const fileOptions = { filename };
-    if (withExplicitMime) {
-      fileOptions.contentType = file.mimetype || "application/octet-stream";
-    }
-    form.append("files[]", fs.createReadStream(file.path), fileOptions);
-
-    const response = await http.post("https://up1.fileditch.com/upload.php", form, {
-      headers: form.getHeaders(),
-      ...mergeSignal({}, signal)
-    });
-    const body = parseJsonLoose(response.data);
-    return { response, body };
-  };
-
-  const parsed = path.parse(file.originalname);
-  const base = (parsed.name || "file").replace(/[^a-zA-Z0-9._-]+/g, "_");
-  const candidateNames = [
-    file.originalname,
-    `${base}.txt`,
-    `${base}.dat`,
-    `${base}.bin`
-  ];
-
-  let lastFailure = null;
-  for (let i = 0; i < candidateNames.length; i += 1) {
-    const candidate = candidateNames[i];
-    const tryResult = await uploadWithName(candidate, i === 0);
-    const ok =
-      tryResult.response.status >= 200 &&
-      tryResult.response.status < 300 &&
-      tryResult.body?.success &&
-      tryResult.body.files?.[0]?.url;
-
-    if (ok) {
-      return {
-        url: tryResult.body.files[0].url,
-        raw: {
-          ...tryResult.body,
-          renamedFrom: candidate === file.originalname ? undefined : file.originalname,
-          renamedTo: candidate === file.originalname ? undefined : candidate
-        }
-      };
-    }
-
-    const blockedByExt =
-      tryResult.response.status === 415 &&
-      typeof tryResult.body?.description === "string" &&
-      tryResult.body.description.toLowerCase().includes("extension");
-
-    lastFailure = tryResult;
-    if (!blockedByExt) {
-      break;
-    }
-  }
-
-  if (lastFailure) {
-    throw makeErrorFromResponse("Fileditch: upload failed after extension fallbacks", lastFailure.response, lastFailure.body);
-  }
-
-  throw new UploadError("Fileditch: unknown upload failure");
-}
-
 async function uploadToBuzzheavier(file, options = {}) {
   const signal = options.signal || null;
   const locationId = options.locationId || "3eb9t1559lkv";
@@ -787,39 +775,257 @@ async function uploadToBuzzheavier(file, options = {}) {
   throw makeErrorFromResponse("Buzzheavier: upload failed", response, body);
 }
 
-async function uploadToRanoz(file, options = {}) {
+async function fetch0807Pow(signal) {
+  const response = await http.get("https://0807.st/pow", mergeSignal({}, signal));
+  const body = parseJsonLoose(response.data);
+  if (response.status < 200 || response.status >= 300 || !body?.id || !body?.sig) {
+    throw makeErrorFromResponse("0807.st: unable to get proof-of-work challenge", response, body);
+  }
+  return body;
+}
+
+async function solve0807Pow(signal) {
+  const challenge = await fetch0807Pow(signal);
+  const nonce = await solveProofOfWork({
+    seed: `${challenge.id}.`,
+    bits: challenge.bits,
+    formatNonce: (value) => String(value),
+    signal
+  });
+  return {
+    pow_id: challenge.id,
+    pow_ts: String(challenge.ts),
+    pow_bits: String(challenge.bits),
+    pow_sig: challenge.sig,
+    pow_nonce: nonce
+  };
+}
+
+function collect0807ExtraFields(options = {}) {
+  const fields = {};
+  for (const name of ["expiry", "maxdl", "password"]) {
+    const value = options[name];
+    if (value === undefined || value === null || String(value) === "") {
+      continue;
+    }
+    fields[name] = String(value);
+  }
+  return fields;
+}
+
+async function uploadTo0807(file, options = {}) {
   const signal = options.signal || null;
-  const metaResp = await http.post("https://ranoz.gg/api/v1/files/upload_url", {
-    filename: file.originalname,
-    size: file.size
-  }, {
-    headers: { "Content-Type": "application/json" },
-    ...mergeSignal({}, signal)
-  });
-  const metaBody = parseJsonLoose(metaResp.data);
-  const uploadUrl = metaBody?.data?.upload_url;
-  const shareUrl = metaBody?.data?.url;
+  const token = String(options.token || "").trim();
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const extraFields = collect0807ExtraFields(options);
+  const maxSingleBytes = token ? 50 * GIB : 2 * GIB;
+  const timeout = Math.max(HTTP_TIMEOUT_MS, 600_000);
 
-  if (metaResp.status < 200 || metaResp.status >= 300 || !uploadUrl) {
-    throw makeErrorFromResponse("Ranoz: unable to get signed URL", metaResp, metaBody);
+  if (file.size <= maxSingleBytes) {
+    const form = new FormData();
+    form.append("file", fs.createReadStream(file.path), {
+      filename: file.originalname,
+      contentType: file.mimetype || "application/octet-stream"
+    });
+    for (const [name, value] of Object.entries(extraFields)) {
+      form.append(name, value);
+    }
+    if (!token) {
+      const powFields = await solve0807Pow(signal);
+      for (const [name, value] of Object.entries(powFields)) {
+        form.append(name, value);
+      }
+    }
+
+    const response = await http.post("https://0807.st/upload", form, {
+      headers: { ...form.getHeaders(), ...authHeaders },
+      timeout,
+      ...mergeSignal({}, signal)
+    });
+    const body = parseJsonLoose(response.data);
+
+    if (response.status >= 200 && response.status < 300 && body?.url) {
+      return { url: body.url, raw: body };
+    }
+
+    throw makeErrorFromResponse("0807.st: upload failed", response, body);
   }
 
-  const putResp = await http.put(uploadUrl, fs.createReadStream(file.path), {
-    headers: {
-      "Content-Type": file.mimetype || "application/octet-stream",
-      "Content-Length": String(file.size)
-    },
+  const initPayload = {
+    name: file.originalname,
+    size: file.size,
+    mime: file.mimetype || "application/octet-stream",
+    ...(token ? {} : await solve0807Pow(signal))
+  };
+
+  const initResp = await http.post("https://0807.st/upload/init", initPayload, {
+    headers: { "Content-Type": "application/json", ...authHeaders },
     ...mergeSignal({}, signal)
   });
+  const initBody = parseJsonLoose(initResp.data);
+  const uploadId = initBody?.uploadId || initBody?.id || null;
 
-  if (putResp.status >= 200 && putResp.status < 300) {
-    return {
-      url: shareUrl || null,
-      raw: metaBody
-    };
+  if (initResp.status < 200 || initResp.status >= 300 || !uploadId) {
+    throw makeErrorFromResponse("0807.st: unable to start chunked upload", initResp, initBody);
   }
 
-  throw makeErrorFromResponse("Ranoz: content upload failed", putResp);
+  const chunkSize = Number(initBody.chunkSize) > 0 ? Number(initBody.chunkSize) : 64 * MIB;
+  const handle = await fsp.open(file.path, "r");
+
+  try {
+    for (let offset = 0; offset < file.size; offset += chunkSize) {
+      throwIfAborted(signal);
+      const length = Math.min(chunkSize, file.size - offset);
+      const chunk = await readChunk(handle, offset, length);
+      const chunkUrl = `https://0807.st/upload/chunk?id=${encodeURIComponent(uploadId)}&offset=${offset}`;
+      const chunkResp = await http.post(chunkUrl, chunk, {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": String(chunk.length),
+          ...authHeaders
+        },
+        timeout,
+        ...mergeSignal({}, signal)
+      });
+
+      if (chunkResp.status < 200 || chunkResp.status >= 300) {
+        throw makeErrorFromResponse("0807.st: chunk upload failed", chunkResp, parseJsonLoose(chunkResp.data));
+      }
+    }
+  } finally {
+    await handle.close();
+  }
+
+  const finishResp = await http.post(
+    "https://0807.st/upload/finish",
+    { id: uploadId, vanity: "", ...extraFields },
+    {
+      headers: { "Content-Type": "application/json", ...authHeaders },
+      ...mergeSignal({}, signal)
+    }
+  );
+  const finishBody = parseJsonLoose(finishResp.data);
+
+  if (finishResp.status >= 200 && finishResp.status < 300 && finishBody?.url) {
+    return { url: finishBody.url, raw: finishBody };
+  }
+
+  throw makeErrorFromResponse("0807.st: upload completion failed", finishResp, finishBody);
+}
+
+async function uploadToDropDrive(file, options = {}) {
+  const signal = options.signal || null;
+  const token = String(options.token || "").trim();
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const jsonHeaders = { "Content-Type": "application/json", ...authHeaders };
+  const timeout = Math.max(HTTP_TIMEOUT_MS, 600_000);
+
+  const configResp = await http.get("https://dropdrive.rip/api/config", mergeSignal({}, signal));
+  const configBody = parseJsonLoose(configResp.data) || {};
+  const configuredChunkSize = Number(configBody.chunkSizeBytes);
+  const chunkSize = configuredChunkSize > 0 ? configuredChunkSize : 100 * MIB;
+  const maxFileSizeGb = Number(configBody.maxFileSizeGB);
+
+  if (!token && configBody.allowAnonymousUploads === false) {
+    throw new UploadError("DropDrive: anonymous uploads are disabled, an account token is required");
+  }
+  if (Number.isFinite(maxFileSizeGb) && maxFileSizeGb > 0 && file.size > maxFileSizeGb * GIB) {
+    throw new UploadError(`DropDrive: file exceeds the ${maxFileSizeGb} GB limit`);
+  }
+
+  const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
+  const initPayload = {
+    fileName: file.originalname,
+    fileSize: file.size,
+    totalChunks
+  };
+
+  if (!token) {
+    const challengeResp = await http.get(
+      "https://dropdrive.rip/api/upload/pow-challenge",
+      mergeSignal({}, signal)
+    );
+    const challengeBody = parseJsonLoose(challengeResp.data);
+
+    if (!challengeBody?.skipPow) {
+      if (challengeResp.status < 200 || challengeResp.status >= 300 || !challengeBody?.challenge) {
+        throw makeErrorFromResponse("DropDrive: unable to get proof-of-work challenge", challengeResp, challengeBody);
+      }
+      initPayload.powChallenge = challengeBody.challenge;
+      initPayload.powNonce = await solveProofOfWork({
+        seed: challengeBody.challenge,
+        bits: challengeBody.difficulty,
+        formatNonce: (value) => value.toString(16),
+        signal
+      });
+    }
+  }
+
+  const initResp = await http.post("https://dropdrive.rip/api/upload/init", initPayload, {
+    headers: jsonHeaders,
+    ...mergeSignal({}, signal)
+  });
+  const initBody = parseJsonLoose(initResp.data);
+  const sessionId = initBody?.sessionId || null;
+  const storageBase = String(initBody?.storageServerUrl || "").replace(/\/+$/, "");
+
+  if (initResp.status < 200 || initResp.status >= 300 || !sessionId || !storageBase) {
+    throw makeErrorFromResponse("DropDrive: unable to start upload", initResp, initBody);
+  }
+
+  const partSize = Number(initBody.chunkSize) > 0 ? Number(initBody.chunkSize) : chunkSize;
+  const handle = await fsp.open(file.path, "r");
+
+  try {
+    for (let index = 0; index < totalChunks; index += 1) {
+      throwIfAborted(signal);
+      const offset = index * partSize;
+      const length = Math.min(partSize, file.size - offset);
+      const chunk = await readChunk(handle, offset, length);
+      const isLast = index === totalChunks - 1;
+      const partUrl = `${storageBase}/files/${encodeURIComponent(sessionId)}/${index}${isLast ? "?last=1" : ""}`;
+      const partResp = await http.post(partUrl, chunk, {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": String(chunk.length)
+        },
+        timeout,
+        ...mergeSignal({}, signal)
+      });
+
+      if (partResp.status < 200 || partResp.status >= 300) {
+        throw makeErrorFromResponse(
+          `DropDrive: part ${index + 1} upload failed`,
+          partResp,
+          parseJsonLoose(partResp.data)
+        );
+      }
+    }
+  } finally {
+    await handle.close();
+  }
+
+  const completeResp = await http.post(
+    "https://dropdrive.rip/api/upload/complete",
+    { sessionId },
+    { headers: jsonHeaders, ...mergeSignal({}, signal) }
+  );
+  const completeBody = parseJsonLoose(completeResp.data);
+  const downloadUrl = completeBody?.downloadUrl || null;
+  const shortCode = completeBody?.shortCode || null;
+  let url = null;
+
+  if (downloadUrl) {
+    url = new URL(downloadUrl, "https://dropdrive.rip/").toString();
+  } else if (shortCode) {
+    url = `https://dropdrive.rip/d/${encodeURIComponent(shortCode)}`;
+  }
+
+  if (completeResp.status >= 200 && completeResp.status < 300 && url) {
+    return { url, raw: completeBody };
+  }
+
+  throw makeErrorFromResponse("DropDrive: upload completion failed", completeResp, completeBody);
 }
 
 async function uploadToVikingfile(file, options = {}) {
@@ -1061,36 +1267,151 @@ async function uploadToBowFile(file, options = {}) {
 async function uploadToAkiraBox(file, options = {}) {
   const signal = options.signal || null;
   const apiKey = String(options.apiKey || "").trim();
+  const otp = String(options.otp || "").trim();
 
   if (!apiKey) {
-    throw new UploadError("AkiraBox: API key is required");
+    throw new UploadError(
+      "AkiraBox: API key is required (Premium account, create one at https://akirabox.to/developers)"
+    );
   }
 
-  const form = new FormData();
-  form.append("file", fs.createReadStream(file.path), {
-    filename: file.originalname,
-    contentType: file.mimetype || "application/octet-stream"
-  });
+  const base = "https://akirabox.to";
+  const timeout = Math.max(HTTP_TIMEOUT_MS, 600_000);
+  const authHeaders = { Authorization: `Bearer ${apiKey}` };
+  if (otp) {
+    authHeaders["X-OTP"] = otp;
+  }
 
-  const uploadResp = await http.post("https://akirabox.com/api/files/upload", form, {
-    headers: {
-      ...form.getHeaders(),
-      Authorization: `Bearer ${apiKey}`
-    },
-    timeout: Math.max(HTTP_TIMEOUT_MS, 600_000),
+  const startParams = new URLSearchParams({
+    file: file.originalname,
+    fileSize: String(file.size)
+  });
+  if (options.folderId) {
+    startParams.set("folder", String(options.folderId));
+  }
+
+  const startResp = await http.post(`${base}/api/upload/start?${startParams.toString()}`, null, {
+    headers: authHeaders,
     ...mergeSignal({}, signal)
   });
-  const uploadBody = parseJsonLoose(uploadResp.data);
-  const fileCode = uploadBody?.file_code || uploadBody?.data?.file_code || null;
+  const startBody = parseJsonLoose(startResp.data);
 
-  if (uploadResp.status >= 200 && uploadResp.status < 300 && fileCode) {
+  if (startResp.status < 200 || startResp.status >= 300 || !startBody) {
+    throw makeErrorFromResponse("AkiraBox: unable to start upload", startResp, startBody);
+  }
+
+  const uploadId = startBody.uploadId || startBody.id || null;
+  const key = startBody.key == null ? "" : String(startBody.key);
+  const providerId = startBody.providerId == null ? "" : String(startBody.providerId);
+
+  const completeUrl = new URL(`${base}/api/upload/complete`);
+  completeUrl.searchParams.set("key", key);
+  completeUrl.searchParams.set("providerId", providerId);
+
+  const finishUpload = async () => {
+    const completeResp = await http.post(
+      completeUrl.toString(),
+      { metadata: startBody.metadata ?? null, filesize: file.size },
+      {
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        ...mergeSignal({}, signal)
+      }
+    );
+    const completeBody = parseJsonLoose(completeResp.data);
+    const fileId = completeBody?.id || completeBody?.fileId || null;
+
+    if (completeResp.status >= 200 && completeResp.status < 300 && fileId) {
+      return {
+        url: `https://akirabox.to/${encodeURIComponent(fileId)}/file`,
+        raw: completeBody
+      };
+    }
+
+    throw makeErrorFromResponse("AkiraBox: upload completion failed", completeResp, completeBody);
+  };
+
+  if (startBody.simple && startBody.putUrl) {
+    const putResp = await http.put(startBody.putUrl, fs.createReadStream(file.path), {
+      headers: {
+        "Content-Type": file.mimetype || "application/octet-stream",
+        "Content-Length": String(file.size)
+      },
+      timeout,
+      ...mergeSignal({}, signal)
+    });
+
+    if (putResp.status < 200 || putResp.status >= 300) {
+      throw makeErrorFromResponse("AkiraBox: direct upload failed", putResp, parseJsonLoose(putResp.data));
+    }
+
+    return finishUpload();
+  }
+
+  if (!uploadId) {
+    throw new UploadError("AkiraBox: upload session did not return an uploadId", startBody);
+  }
+
+  const chunkParams = new URLSearchParams({
+    uploadId: String(uploadId),
+    "part-number": "1",
+    key,
+    providerId
+  });
+  const chunkResp = await http.get(`${base}/api/upload/chunk-url?${chunkParams.toString()}`, {
+    headers: authHeaders,
+    ...mergeSignal({}, signal)
+  });
+  const chunkBody = parseJsonLoose(chunkResp.data);
+  const signedUrl = chunkBody?.url || chunkBody?.signedUrl || null;
+
+  if (chunkResp.status < 200 || chunkResp.status >= 300 || !signedUrl) {
+    throw makeErrorFromResponse("AkiraBox: unable to get a signed upload URL", chunkResp, chunkBody);
+  }
+
+  const putResp = await http.put(signedUrl, fs.createReadStream(file.path), {
+    headers: {
+      "Content-Type": file.mimetype || "application/octet-stream",
+      "Content-Length": String(file.size)
+    },
+    timeout,
+    ...mergeSignal({}, signal)
+  });
+
+  if (putResp.status < 200 || putResp.status >= 300) {
+    throw makeErrorFromResponse("AkiraBox: storage upload failed", putResp, parseJsonLoose(putResp.data));
+  }
+
+  const rawEtag = putResp.headers?.etag || putResp.headers?.ETag;
+  if (!rawEtag) {
+    throw new UploadError("AkiraBox: storage did not return an ETag", { status: putResp.status });
+  }
+  const etag = String(rawEtag).replace(/^W\//, "");
+
+  const completeResp = await http.post(
+    completeUrl.toString(),
+    {
+      UploadId: uploadId,
+      MultipartUpload: { Parts: [{ PartNumber: 1, ETag: etag }] },
+      filename: file.originalname,
+      filesize: file.size,
+      filetype: file.mimetype || "application/octet-stream"
+    },
+    {
+      headers: { "Content-Type": "application/json", ...authHeaders },
+      ...mergeSignal({}, signal)
+    }
+  );
+  const completeBody = parseJsonLoose(completeResp.data);
+  const fileId = completeBody?.id || completeBody?.fileId || null;
+
+  if (completeResp.status >= 200 && completeResp.status < 300 && fileId) {
     return {
-      url: `https://akirabox.com/${fileCode}/file`,
-      raw: uploadBody
+      url: `https://akirabox.to/${encodeURIComponent(fileId)}/file`,
+      raw: completeBody
     };
   }
 
-  throw makeErrorFromResponse("AkiraBox: upload failed", uploadResp, uploadBody);
+  throw makeErrorFromResponse("AkiraBox: upload completion failed", completeResp, completeBody);
 }
 
 async function uploadToTarget(target, file, options = {}) {
@@ -1110,8 +1431,6 @@ async function uploadToTarget(target, file, options = {}) {
       return uploadToSendNow(file, options);
     case "buzzheavier":
       return uploadToBuzzheavier(file, options);
-    case "ranoz":
-      return uploadToRanoz(file, options);
     case "vikingfile":
       return uploadToVikingfile(file, options);
     case "filemirage":
@@ -1122,6 +1441,10 @@ async function uploadToTarget(target, file, options = {}) {
       return uploadToBowFile(file, options);
     case "akirabox":
       return uploadToAkiraBox(file, options);
+    case "0807st":
+      return uploadTo0807(file, options);
+    case "dropdrive":
+      return uploadToDropDrive(file, options);
     default:
       throw new UploadError(`Unknown target: ${target}`);
   }
