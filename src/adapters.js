@@ -1,5 +1,4 @@
 const fs = require("fs");
-const fsp = require("fs/promises");
 const { createHash } = require("crypto");
 const axios = require("axios");
 const FormData = require("form-data");
@@ -388,6 +387,7 @@ async function uploadToGofile(file, options = {}) {
 
   const uploadResp = await http.post("https://upload.gofile.io/uploadfile", form, {
     headers: form.getHeaders(),
+    maxRedirects: 0,
     ...mergeSignal({}, signal)
   });
   const uploadBody = parseJsonLoose(uploadResp.data);
@@ -488,6 +488,7 @@ async function uploadToRootzRegular(file, options = {}) {
 
   const response = await http.post("https://rootz.so/api/files/upload", form, {
     headers: form.getHeaders(),
+    maxRedirects: 0,
     ...mergeSignal({}, signal)
   });
   const body = parseJsonLoose(response.data);
@@ -513,10 +514,22 @@ async function uploadToRootzRegular(file, options = {}) {
   throw makeErrorFromResponse("Rootz: standard upload failed", response, body);
 }
 
-async function readChunk(fileHandle, start, length) {
-  const buffer = Buffer.alloc(length);
-  const { bytesRead } = await fileHandle.read(buffer, 0, length, start);
-  return bytesRead === length ? buffer : buffer.subarray(0, bytesRead);
+function createChunkStream(filePath, start, length, signal) {
+  const stream = fs.createReadStream(filePath, { start, end: start + length - 1 });
+
+  if (!signal) {
+    return stream;
+  }
+
+  if (signal.aborted) {
+    stream.destroy();
+    return stream;
+  }
+
+  const abort = () => stream.destroy();
+  signal.addEventListener("abort", abort, { once: true });
+  stream.on("close", () => signal.removeEventListener("abort", abort));
+  return stream;
 }
 
 async function uploadToRootzMultipart(file, options = {}) {
@@ -554,56 +567,51 @@ async function uploadToRootzMultipart(file, options = {}) {
 
   const partUrls = { ...(urlsBody.urls || {}) };
   const parts = [];
-  const handle = await fsp.open(file.path, "r");
 
-  try {
-    for (let partNumber = 1; partNumber <= totalParts; partNumber += 1) {
-      let signedUrl = partUrls[partNumber] || partUrls[String(partNumber)] || null;
-      if (!signedUrl) {
-        const singleResp = await http.post("https://rootz.so/api/files/multipart/part-url", {
-          key,
-          uploadId,
-          partNumber,
-          expiresIn: 7200
-        }, mergeSignal({}, signal));
-        const singleBody = parseJsonLoose(singleResp.data);
-        if (singleResp.status < 200 || singleResp.status >= 300 || !singleBody?.success || !singleBody?.url) {
-          throw makeErrorFromResponse(
-            `Rootz: missing URL for part ${partNumber}`,
-            singleResp,
-            singleBody
-          );
-        }
-        signedUrl = singleBody.url;
-      }
-
-      const start = (partNumber - 1) * chunkSize;
-      const length = Math.min(chunkSize, file.size - start);
-      const chunk = await readChunk(handle, start, length);
-
-      const putResp = await http.put(signedUrl, chunk, {
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "Content-Length": String(chunk.length)
-        },
-        timeout: Math.max(HTTP_TIMEOUT_MS, 300_000),
-        ...mergeSignal({}, signal)
-      });
-      if (putResp.status < 200 || putResp.status >= 300) {
-        throw makeErrorFromResponse(`Rootz: chunk ${partNumber} upload failed`, putResp);
-      }
-
-      const etagRaw = putResp.headers?.etag || putResp.headers?.ETag;
-      if (!etagRaw) {
-        throw new UploadError(`Rootz: missing ETag for part ${partNumber}`);
-      }
-      parts.push({
+  for (let partNumber = 1; partNumber <= totalParts; partNumber += 1) {
+    let signedUrl = partUrls[partNumber] || partUrls[String(partNumber)] || null;
+    if (!signedUrl) {
+      const singleResp = await http.post("https://rootz.so/api/files/multipart/part-url", {
+        key,
+        uploadId,
         partNumber,
-        etag: String(etagRaw).replace(/"/g, "")
-      });
+        expiresIn: 7200
+      }, mergeSignal({}, signal));
+      const singleBody = parseJsonLoose(singleResp.data);
+      if (singleResp.status < 200 || singleResp.status >= 300 || !singleBody?.success || !singleBody?.url) {
+        throw makeErrorFromResponse(
+          `Rootz: missing URL for part ${partNumber}`,
+          singleResp,
+          singleBody
+        );
+      }
+      signedUrl = singleBody.url;
     }
-  } finally {
-    await handle.close();
+
+    const start = (partNumber - 1) * chunkSize;
+    const length = Math.min(chunkSize, file.size - start);
+
+    const putResp = await http.put(signedUrl, createChunkStream(file.path, start, length, signal), {
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "Content-Length": String(length)
+      },
+      timeout: Math.max(HTTP_TIMEOUT_MS, 300_000),
+      maxRedirects: 0,
+      ...mergeSignal({}, signal)
+    });
+    if (putResp.status < 200 || putResp.status >= 300) {
+      throw makeErrorFromResponse(`Rootz: chunk ${partNumber} upload failed`, putResp);
+    }
+
+    const etagRaw = putResp.headers?.etag || putResp.headers?.ETag;
+    if (!etagRaw) {
+      throw new UploadError(`Rootz: missing ETag for part ${partNumber}`);
+    }
+    parts.push({
+      partNumber,
+      etag: String(etagRaw).replace(/"/g, "")
+    });
   }
 
   const completeResp = await http.post("https://rootz.so/api/files/multipart/complete", {
@@ -720,6 +728,7 @@ async function uploadToSendNow(file, options = {}) {
 
   const uploadResp = await http.post(actionUrl, form, {
     headers: form.getHeaders(),
+    maxRedirects: 0,
     ...mergeSignal({}, signal)
   });
   const payload = parseSendNowPayload(uploadResp.data);
@@ -759,6 +768,7 @@ async function uploadToBuzzheavier(file, options = {}) {
         "Content-Length": String(file.size)
       },
       timeout: timeoutMs,
+      maxRedirects: 0,
       ...mergeSignal({}, signal)
     }
   );
@@ -818,10 +828,16 @@ async function uploadTo0807(file, options = {}) {
   const token = String(options.token || "").trim();
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
   const extraFields = collect0807ExtraFields(options);
-  const maxSingleBytes = token ? 50 * GIB : 2 * GIB;
+  const maxBytes = token ? 50 * GIB : 2 * GIB;
   const timeout = Math.max(HTTP_TIMEOUT_MS, 600_000);
 
-  if (file.size <= maxSingleBytes) {
+  if (file.size > maxBytes) {
+    throw new UploadError(`0807.st: file exceeds the ${token ? "50 GB" : "2 GB"} limit`);
+  }
+
+  // The direct endpoint rejects larger bodies (HTTP 413), so switch to the
+  // chunked protocol well below its documented size limit.
+  if (file.size <= 32 * MIB) {
     const form = new FormData();
     form.append("file", fs.createReadStream(file.path), {
       filename: file.originalname,
@@ -840,6 +856,7 @@ async function uploadTo0807(file, options = {}) {
     const response = await http.post("https://0807.st/upload", form, {
       headers: { ...form.getHeaders(), ...authHeaders },
       timeout,
+      maxRedirects: 0,
       ...mergeSignal({}, signal)
     });
     const body = parseJsonLoose(response.data);
@@ -870,30 +887,25 @@ async function uploadTo0807(file, options = {}) {
   }
 
   const chunkSize = Number(initBody.chunkSize) > 0 ? Number(initBody.chunkSize) : 64 * MIB;
-  const handle = await fsp.open(file.path, "r");
 
-  try {
-    for (let offset = 0; offset < file.size; offset += chunkSize) {
-      throwIfAborted(signal);
-      const length = Math.min(chunkSize, file.size - offset);
-      const chunk = await readChunk(handle, offset, length);
-      const chunkUrl = `https://0807.st/upload/chunk?id=${encodeURIComponent(uploadId)}&offset=${offset}`;
-      const chunkResp = await http.post(chunkUrl, chunk, {
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "Content-Length": String(chunk.length),
-          ...authHeaders
-        },
-        timeout,
-        ...mergeSignal({}, signal)
-      });
+  for (let offset = 0; offset < file.size; offset += chunkSize) {
+    throwIfAborted(signal);
+    const length = Math.min(chunkSize, file.size - offset);
+    const chunkUrl = `https://0807.st/upload/chunk?id=${encodeURIComponent(uploadId)}&offset=${offset}`;
+    const chunkResp = await http.post(chunkUrl, createChunkStream(file.path, offset, length, signal), {
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "Content-Length": String(length),
+        ...authHeaders
+      },
+      timeout,
+      maxRedirects: 0,
+      ...mergeSignal({}, signal)
+    });
 
-      if (chunkResp.status < 200 || chunkResp.status >= 300) {
-        throw makeErrorFromResponse("0807.st: chunk upload failed", chunkResp, parseJsonLoose(chunkResp.data));
-      }
+    if (chunkResp.status < 200 || chunkResp.status >= 300) {
+      throw makeErrorFromResponse("0807.st: chunk upload failed", chunkResp, parseJsonLoose(chunkResp.data));
     }
-  } finally {
-    await handle.close();
   }
 
   const finishResp = await http.post(
@@ -974,35 +986,30 @@ async function uploadToDropDrive(file, options = {}) {
   }
 
   const partSize = Number(initBody.chunkSize) > 0 ? Number(initBody.chunkSize) : chunkSize;
-  const handle = await fsp.open(file.path, "r");
 
-  try {
-    for (let index = 0; index < totalChunks; index += 1) {
-      throwIfAborted(signal);
-      const offset = index * partSize;
-      const length = Math.min(partSize, file.size - offset);
-      const chunk = await readChunk(handle, offset, length);
-      const isLast = index === totalChunks - 1;
-      const partUrl = `${storageBase}/files/${encodeURIComponent(sessionId)}/${index}${isLast ? "?last=1" : ""}`;
-      const partResp = await http.post(partUrl, chunk, {
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "Content-Length": String(chunk.length)
-        },
-        timeout,
-        ...mergeSignal({}, signal)
-      });
+  for (let index = 0; index < totalChunks; index += 1) {
+    throwIfAborted(signal);
+    const offset = index * partSize;
+    const length = Math.min(partSize, file.size - offset);
+    const isLast = index === totalChunks - 1;
+    const partUrl = `${storageBase}/files/${encodeURIComponent(sessionId)}/${index}${isLast ? "?last=1" : ""}`;
+    const partResp = await http.post(partUrl, createChunkStream(file.path, offset, length, signal), {
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "Content-Length": String(length)
+      },
+      timeout,
+      maxRedirects: 0,
+      ...mergeSignal({}, signal)
+    });
 
-      if (partResp.status < 200 || partResp.status >= 300) {
-        throw makeErrorFromResponse(
-          `DropDrive: part ${index + 1} upload failed`,
-          partResp,
-          parseJsonLoose(partResp.data)
-        );
-      }
+    if (partResp.status < 200 || partResp.status >= 300) {
+      throw makeErrorFromResponse(
+        `DropDrive: part ${index + 1} upload failed`,
+        partResp,
+        parseJsonLoose(partResp.data)
+      );
     }
-  } finally {
-    await handle.close();
   }
 
   const completeResp = await http.post(
@@ -1054,6 +1061,7 @@ async function uploadToVikingfile(file, options = {}) {
   const uploadResp = await http.post(server, form, {
     headers: form.getHeaders(),
     timeout: Math.max(HTTP_TIMEOUT_MS, 300_000),
+    maxRedirects: 0,
     ...mergeSignal({}, signal)
   });
   const uploadBody = parseJsonLoose(uploadResp.data);
@@ -1110,6 +1118,7 @@ async function uploadToFilemirage(file, options = {}) {
   const uploadResp = await http.post(`${server}/upload.php`, form, {
     headers: uploadHeaders,
     timeout: Math.max(HTTP_TIMEOUT_MS, 300_000),
+    maxRedirects: 0,
     ...mergeSignal({}, signal)
   });
   const uploadBody = parseJsonLoose(uploadResp.data);
@@ -1155,6 +1164,7 @@ async function uploadToPixeldrain(file, options = {}) {
           "Content-Length": String(file.size)
         },
         timeout: Math.max(HTTP_TIMEOUT_MS, 600_000),
+        maxRedirects: 0,
         ...mergeSignal({}, signal)
       }
     );
@@ -1176,6 +1186,7 @@ async function uploadToPixeldrain(file, options = {}) {
       auth,
       headers: form.getHeaders(),
       timeout: Math.max(HTTP_TIMEOUT_MS, 600_000),
+      maxRedirects: 0,
       ...mergeSignal({}, signal)
     });
     const body = parseJsonLoose(response.data);
@@ -1245,6 +1256,7 @@ async function uploadToBowFile(file, options = {}) {
 
   const uploadResp = await http.post("https://bowfile.com/api/v2/file/upload", uploadForm, {
     headers: uploadForm.getHeaders(),
+    maxRedirects: 0,
     ...mergeSignal({}, signal)
   });
   const uploadBody = parseJsonLoose(uploadResp.data);
@@ -1337,6 +1349,7 @@ async function uploadToAkiraBox(file, options = {}) {
         "Content-Length": String(file.size)
       },
       timeout,
+      maxRedirects: 0,
       ...mergeSignal({}, signal)
     });
 
@@ -1374,6 +1387,7 @@ async function uploadToAkiraBox(file, options = {}) {
       "Content-Length": String(file.size)
     },
     timeout,
+    maxRedirects: 0,
     ...mergeSignal({}, signal)
   });
 

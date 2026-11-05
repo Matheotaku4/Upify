@@ -118,8 +118,10 @@ through the local API (`"otp": "123456"`); the web UI does not expose this field
 - Options: `0807.st partner token`, `0807.st expiry in hours`, `0807.st password`
 - Required: No. Anonymous uploads work, Upify solves the required proof-of-work
   (SHA-256, leading zero bits) automatically.
-- Files up to 2 GB use a single POST (`POST /upload`). Larger files switch to the
-  chunked flow (`POST /upload/init` → `POST /upload/chunk` → `POST /upload/finish`).
+- Files up to 32 MB use a single POST (`POST /upload`); the direct endpoint
+  answers HTTP 413 above that. Larger files use the chunked flow
+  (`POST /upload/init` → `POST /upload/chunk` → `POST /upload/finish`), which
+  streams each part from disk.
 - `expiry` is a number of hours (`0` never, `1`, `24`, `168`, `720`).
 - `password` protects the link.
 

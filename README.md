@@ -93,9 +93,9 @@ dist-electron/Upify-<version>-amd64.deb
 ## Releases
 
 The `Release` GitHub Actions workflow builds both platforms and attaches every
-artifact to a GitHub release. It runs on a `v*` tag push or manually from the
-Actions tab (it creates the tag and the release from the version in
-`package.json`).
+artifact to a GitHub release. It runs on a `v*` tag push, a push to a `release/*`
+branch, or manually from the Actions tab (it creates the tag and the release
+from the version in `package.json`).
 
 ## Documentation
 
@@ -103,7 +103,8 @@ Actions tab (it creates the tag and the release from the version in
 
 ## Features
 
-- Per-host parallel upload with detailed result cards.
+- Per-host parallel upload with detailed result cards, at most 3 hosts at a time.
+- File bodies are streamed from disk, so large uploads no longer keep the whole file in memory.
 - Per-host progress bars and host-level cancellation.
 - Global "Cancel all" for a full running job.
 - "Copy all links" and "Save links (.txt)" actions after upload.
@@ -114,7 +115,7 @@ Actions tab (it creates the tag and the release from the version in
 - External links open in your default browser.
 - Native Windows and Linux desktop builds.
 - 0807.st support: anonymous uploads with the required proof-of-work, optional
-  partner token, expiry and password, automatic chunked upload for files above 2 GB.
+  partner token, expiry and password, automatic chunked upload for files above 32 MB.
 - DropDrive support: anonymous uploads with the required proof-of-work, optional
   account token, and chunked multi-part uploads.
 - BowFile integration via `/api/v2/authorize` + `/api/v2/file/upload`.

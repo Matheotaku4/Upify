@@ -196,6 +196,18 @@ function asyncRoute(handler) {
   };
 }
 
+const MAX_PARALLEL_UPLOADS = 3;
+
+async function runLimited(items, limit, worker) {
+  const queue = [...items];
+  const runners = Array.from({ length: Math.max(1, Math.min(limit, queue.length)) }, async () => {
+    while (queue.length) {
+      await worker(queue.shift());
+    }
+  });
+  await Promise.all(runners);
+}
+
 function writeNdjsonLine(res, payload) {
   if (res.writableEnded || res.destroyed) {
     return;
@@ -312,8 +324,10 @@ function createApp(options = {}) {
     const results = {};
 
     try {
-      await Promise.all(
-        normalizedTargets.map(async ({ requested, normalized }) => {
+      await runLimited(
+        normalizedTargets,
+        MAX_PARALLEL_UPLOADS,
+        async ({ requested, normalized }) => {
           const options =
             optionsByTarget[requested] ||
             optionsByTarget[normalized] ||
@@ -330,7 +344,7 @@ function createApp(options = {}) {
           } catch (error) {
             results[requested] = buildTargetResultFromError(normalized, error);
           }
-        })
+        }
       );
 
       const successfulCount = countSuccessfulTargets(results);
@@ -425,8 +439,10 @@ function createApp(options = {}) {
     });
 
     try {
-      await Promise.all(
-        normalizedTargets.map(async ({ requested, normalized }) => {
+      await runLimited(
+        normalizedTargets,
+        MAX_PARALLEL_UPLOADS,
+        async ({ requested, normalized }) => {
           if (jobState.canceledAll || jobState.canceledTargets.has(normalized)) {
             const targetResult = buildCanceledResult(normalized);
             results[requested] = targetResult;
@@ -490,7 +506,7 @@ function createApp(options = {}) {
               jobState.controllers.delete(normalized);
             }
           }
-        })
+        }
       );
 
       const successfulCount = countSuccessfulTargets(results);
