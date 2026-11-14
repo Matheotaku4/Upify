@@ -15,6 +15,7 @@ const DEFAULT_PORT = Number(process.env.PORT || 3000);
 const DEFAULT_HOST = process.env.HOST || "0.0.0.0";
 const PROJECT_ROOT = path.join(__dirname, "..");
 const TMP_DIR = path.join(os.tmpdir(), "upify-tmp");
+const MAX_FILE_SIZE = 50 * 1024 * 1024 * 1024; // 50 GB
 const PUBLIC_DIR = path.join(PROJECT_ROOT, "public");
 const API_DOC_FILE = path.join(PROJECT_ROOT, "API.md");
 const LOGO_FILE = path.join(PROJECT_ROOT, "logo.png");
@@ -22,6 +23,19 @@ const activeUploadJobs = new Map();
 
 async function ensureTmpDir() {
   await fs.mkdir(TMP_DIR, { recursive: true });
+}
+
+async function cleanupTmpDir() {
+  try {
+    const entries = await fs.readdir(TMP_DIR);
+    for (const entry of entries) {
+      await fs.unlink(path.join(TMP_DIR, entry)).catch(() => {});
+    }
+  } catch (error) {
+    if (error && error.code !== "ENOENT") {
+      throw error;
+    }
+  }
 }
 
 function sanitizePreferencePayload(value) {
@@ -230,7 +244,10 @@ function createApp(options = {}) {
   const preferencesDir = resolvePreferencesDir(options);
 
   const app = express();
-  const upload = multer({ dest: TMP_DIR });
+  const upload = multer({
+  dest: TMP_DIR,
+  limits: { fileSize: MAX_FILE_SIZE }
+});
 
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ extended: true, limit: "2mb" }));
@@ -530,6 +547,18 @@ function createApp(options = {}) {
     }
   }));
 
+  app.use((error, _req, res, _next) => {
+    if (error instanceof multer.MulterError) {
+      if (error.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({
+          error: `File too large. Maximum size is ${Math.floor(MAX_FILE_SIZE / (1024 ** 3))} GB.`
+        });
+      }
+      return res.status(400).json({ error: error.message || "Upload error." });
+    }
+    res.status(500).json({ error: error?.message || "Internal server error" });
+  });
+
   return app;
 }
 
@@ -539,6 +568,7 @@ async function startServer(options = {}) {
   const silent = Boolean(options.silent);
 
   await ensureTmpDir();
+  await cleanupTmpDir();
 
   const app = createApp({
     preferencesDir: options.preferencesDir || null
@@ -574,6 +604,19 @@ function stopServer(server) {
     server.close(() => resolve());
   });
 }
+
+function cleanupAndExit(code = 0) {
+  cleanupTmpDir().catch(() => {});
+  process.exit(code);
+}
+
+process.on("SIGTERM", () => cleanupAndExit(0));
+process.on("SIGINT", () => cleanupAndExit(0));
+process.on("uncaughtException", (error) => {
+  // eslint-disable-next-line no-console
+  console.error("Uncaught exception:", error);
+  cleanupAndExit(1);
+});
 
 if (require.main === module) {
   startServer().catch((error) => {

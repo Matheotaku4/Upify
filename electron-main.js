@@ -1,6 +1,18 @@
 const { app, BrowserWindow, dialog, shell } = require("electron");
 const { startServer, stopServer } = require("./src/server");
 
+// On Linux, Electron requires --no-sandbox when running as root
+// (common in Docker, AppImage, and CI environments).
+if (process.platform === "linux") {
+  try {
+    if (process.getuid() === 0) {
+      app.commandLine.appendSwitch("no-sandbox");
+    }
+  } catch (_err) {
+    // getuid is not available (e.g. on non-Unix platforms); ignore.
+  }
+}
+
 const gotInstanceLock = app.requestSingleInstanceLock();
 if (!gotInstanceLock) {
   app.quit();
