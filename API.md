@@ -16,8 +16,10 @@ This page explains which Advanced Options in Upify need an API key or token, whe
 | `pixeldrain.com` | `Pixeldrain API key` | **Yes** | **Required for API upload** |
 | `bowfile.com` | `BowFile Key 1 / Key 2` | **Yes** | **Required for authenticated uploads** |
 | `akirabox.to` | `AkiraBox API key` | **Yes** | **Required, Premium account only** |
-| `0807.st` | `0807.st partner token` | No | Skips proof-of-work and raises limits |
+| `0807.st` | `0807.st partner token` | No | ⚠️ Currently blocked by Cloudflare legal order |
 | `dropdrive.rip` | `DropDrive account token` | No | Stores uploads in your account instead of anonymously |
+| `new.fileditch.com` | `Fileditch API key` | No | Optional, for account-linked features |
+| `mocha.my` | `Mocha API key` | No | Optional, for account-linked features |
 
 ## Host-by-Host Details
 
@@ -116,7 +118,8 @@ through the local API (`"otp": "123456"`); the web UI does not expose this field
 
 ### 0807.st (`0807.st`)
 - Options: `0807.st partner token`, `0807.st expiry in hours`, `0807.st password`
-- Required: No. Anonymous uploads work, Upify solves the required proof-of-work
+- **Currently unavailable**: `0807.st` is blocked by a Cloudflare legal order (HTTP 451 / Error 1026). Uploads to this host will fail until the block is lifted.
+- Required: No. Anonymous uploads work when accessible, Upify solves the required proof-of-work
   (SHA-256, leading zero bits) automatically.
 - Files up to 32 MB use a single POST (`POST /upload`); the direct endpoint
   answers HTTP 413 above that. Larger files use the chunked flow
@@ -131,6 +134,14 @@ Optional partner token:
    limit (50 GB single POST, 100 GB chunked) and unlocks custom links.
 
 API reference: <https://0807.st/api>
+
+### Fileditch (`new.fileditch.com`)
+- Option: `Fileditch API key` (optional)
+- Required: No. Anonymous uploads work; an API key may enable account-linked features.
+
+### Mocha (`mocha.my`)
+- Option: `Mocha API key` (optional)
+- Required: No. Anonymous uploads work; an API key may enable account-linked features.
 
 ### DropDrive (`dropdrive.rip`)
 - Option: `DropDrive account token`

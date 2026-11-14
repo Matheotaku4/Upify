@@ -33,7 +33,9 @@ const supportedTargets = [
   "bowfile",
   "akirabox",
   "0807st",
-  "dropdrive"
+  "dropdrive",
+  "fileditch",
+  "mocha"
 ];
 
 const targetAliases = {
@@ -64,7 +66,12 @@ const targetAliases = {
   "0807.st": "0807st",
   "0807st": "0807st",
   dropdrive: "dropdrive",
-  "dropdrive.rip": "dropdrive"
+  "dropdrive.rip": "dropdrive",
+  fileditch: "fileditch",
+  "new.fileditch.com": "fileditch",
+  "fileditch.com": "fileditch",
+  mocha: "mocha",
+  "mocha.my": "mocha"
 };
 
 class UploadError extends Error {
@@ -979,13 +986,22 @@ async function uploadToDropDrive(file, options = {}) {
   });
   const initBody = parseJsonLoose(initResp.data);
   const sessionId = initBody?.sessionId || null;
-  const storageBase = String(initBody?.storageServerUrl || "").replace(/\/+$/, "");
+  const uploadToken = String(initBody?.uploadToken || "").trim();
+
+  // New API returns s3Target instead of storageServerUrl.
+  // Support both formats for backward compatibility.
+  let storageBase = String(initBody?.storageServerUrl || "").replace(/\/+$/, "");
+  if (!storageBase && initBody?.s3Target?.name) {
+    storageBase = `https://${initBody.s3Target.name}.dropdrive.rip`.replace(/\/+$/, "");
+  }
 
   if (initResp.status < 200 || initResp.status >= 300 || !sessionId || !storageBase) {
     throw makeErrorFromResponse("DropDrive: unable to start upload", initResp, initBody);
   }
 
   const partSize = Number(initBody.chunkSize) > 0 ? Number(initBody.chunkSize) : chunkSize;
+  // Use uploadToken for part upload authentication when available (new API).
+  const partAuthHeaders = uploadToken ? { Authorization: `Bearer ${uploadToken}` } : authHeaders;
 
   for (let index = 0; index < totalChunks; index += 1) {
     throwIfAborted(signal);
@@ -996,7 +1012,8 @@ async function uploadToDropDrive(file, options = {}) {
     const partResp = await http.post(partUrl, createChunkStream(file.path, offset, length, signal), {
       headers: {
         "Content-Type": "application/octet-stream",
-        "Content-Length": String(length)
+        "Content-Length": String(length),
+        ...partAuthHeaders
       },
       timeout,
       maxRedirects: 0,
@@ -1033,6 +1050,56 @@ async function uploadToDropDrive(file, options = {}) {
   }
 
   throw makeErrorFromResponse("DropDrive: upload completion failed", completeResp, completeBody);
+}
+
+async function uploadToFileditch(file, options = {}) {
+  const signal = options.signal || null;
+  const timeout = Math.max(HTTP_TIMEOUT_MS, 600_000);
+
+  const form = new FormData();
+  form.append("file", fs.createReadStream(file.path), {
+    filename: file.originalname,
+    contentType: file.mimetype || "application/octet-stream"
+  });
+
+  const response = await http.post("https://new.fileditch.com/upload", form, {
+    headers: form.getHeaders(),
+    timeout,
+    maxRedirects: 0,
+    ...mergeSignal({}, signal)
+  });
+  const body = parseJsonLoose(response.data);
+
+  if (response.status >= 200 && response.status < 300 && (body?.url || body?.link || body?.fileUrl)) {
+    return { url: body.url || body.link || body.fileUrl, raw: body };
+  }
+
+  throw makeErrorFromResponse("Fileditch: upload failed", response, body);
+}
+
+async function uploadToMocha(file, options = {}) {
+  const signal = options.signal || null;
+  const timeout = Math.max(HTTP_TIMEOUT_MS, 600_000);
+
+  const form = new FormData();
+  form.append("file", fs.createReadStream(file.path), {
+    filename: file.originalname,
+    contentType: file.mimetype || "application/octet-stream"
+  });
+
+  const response = await http.post("https://mocha.my/upload", form, {
+    headers: form.getHeaders(),
+    timeout,
+    maxRedirects: 0,
+    ...mergeSignal({}, signal)
+  });
+  const body = parseJsonLoose(response.data);
+
+  if (response.status >= 200 && response.status < 300 && (body?.url || body?.link || body?.fileUrl)) {
+    return { url: body.url || body.link || body.fileUrl, raw: body };
+  }
+
+  throw makeErrorFromResponse("Mocha: upload failed", response, body);
 }
 
 async function uploadToVikingfile(file, options = {}) {
@@ -1459,6 +1526,10 @@ async function uploadToTarget(target, file, options = {}) {
       return uploadTo0807(file, options);
     case "dropdrive":
       return uploadToDropDrive(file, options);
+    case "fileditch":
+      return uploadToFileditch(file, options);
+    case "mocha":
+      return uploadToMocha(file, options);
     default:
       throw new UploadError(`Unknown target: ${target}`);
   }

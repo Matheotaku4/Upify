@@ -40,8 +40,9 @@
               <label><input type="checkbox" value="pixeldrain" checked /> pixeldrain.com</label>
               <label><input type="checkbox" value="bowfile" checked /> BowFile</label>
               <label><input type="checkbox" value="akirabox" checked /> akirabox.to</label>
-              <label><input type="checkbox" value="0807st" checked /> 0807.st</label>
               <label><input type="checkbox" value="dropdrive" checked /> dropdrive.rip</label>
+              <label><input type="checkbox" value="fileditch" /> new.fileditch.com</label>
+              <label><input type="checkbox" value="mocha" /> mocha.my</label>
             </div>
           </div>
 
@@ -141,6 +142,16 @@
                 <span>DropDrive account token (optional)</span>
                 <input id="opt-dropdrive-token" type="text" placeholder="16-character token" />
               </label>
+
+              <label class="field">
+                <span>Fileditch API key (optional)</span>
+                <input id="opt-fileditch-key" type="text" placeholder="API key" />
+              </label>
+
+              <label class="field">
+                <span>Mocha API key (optional)</span>
+                <input id="opt-mocha-key" type="text" placeholder="API key" />
+              </label>
             </div>
           </details>
 
@@ -197,7 +208,9 @@
         "opt-0807-token",
         "opt-0807-expiry",
         "opt-0807-password",
-        "opt-dropdrive-token"
+        "opt-dropdrive-token",
+        "opt-fileditch-key",
+        "opt-mocha-key"
       ];
       let lastLinks = [];
       const progressState = new Map();
@@ -399,7 +412,9 @@
           bowfile: {},
           akirabox: {},
           "0807st": {},
-          dropdrive: {}
+          dropdrive: {},
+          fileditch: {},
+          mocha: {}
         };
 
         const gofileToken = document.getElementById("opt-gofile-token").value.trim();
@@ -418,6 +433,8 @@
         const expiry0807 = document.getElementById("opt-0807-expiry").value.trim();
         const password0807 = document.getElementById("opt-0807-password").value.trim();
         const dropdriveToken = document.getElementById("opt-dropdrive-token").value.trim();
+        const fileditchKey = document.getElementById("opt-fileditch-key").value.trim();
+        const mochaKey = document.getElementById("opt-mocha-key").value.trim();
 
         if (gofileToken) {
           options.gofile.token = gofileToken;
@@ -466,6 +483,12 @@
         }
         if (dropdriveToken) {
           options.dropdrive.token = dropdriveToken;
+        }
+        if (fileditchKey) {
+          options.fileditch.apiKey = fileditchKey;
+        }
+        if (mochaKey) {
+          options.mocha.apiKey = mochaKey;
         }
 
         return options;
