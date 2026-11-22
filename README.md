@@ -117,7 +117,9 @@ from the version in `package.json`).
 - 0807.st support: anonymous uploads with the required proof-of-work, optional
   partner token, expiry and password, automatic chunked upload for files above 32 MB.
 - DropDrive support: anonymous uploads with the required proof-of-work, optional
-  account token, and chunked multi-part uploads.
+  account token, and the current S3 direct-upload or storage-server flows.
+- Fileditch support via the raw `PUT /upload.php` endpoint.
+- Mocha support via the authenticated multipart API and share-link creation.
 - BowFile integration via `/api/v2/authorize` + `/api/v2/file/upload`.
 - AkiraBox integration via the current `akirabox.to` signed-upload API.
 
@@ -146,6 +148,8 @@ Example:
   "bowfile": { "key1": "...", "key2": "...", "folderId": "optional" },
   "akirabox": { "apiKey": "...", "otp": "optional 2FA code" },
   "0807st": { "token": "optional partner token", "expiry": "24", "password": "optional" },
-  "dropdrive": { "token": "optional account token" }
+  "dropdrive": { "token": "optional account token" },
+  "fileditch": { "apiKey": "optional login token" },
+  "mocha": { "apiKey": "required login token" }
 }
 ```

@@ -18,8 +18,8 @@ This page explains which Advanced Options in Upify need an API key or token, whe
 | `akirabox.to` | `AkiraBox API key` | **Yes** | **Required, Premium account only** |
 | `0807.st` | `0807.st partner token` | No | ⚠️ Currently blocked by Cloudflare legal order |
 | `dropdrive.rip` | `DropDrive account token` | No | Stores uploads in your account instead of anonymously |
-| `new.fileditch.com` | `Fileditch API key` | No | Optional, for account-linked features |
-| `mocha.my` | `Mocha API key` | No | Optional, for account-linked features |
+| `new.fileditch.com` | `Fileditch API key` | No | Optional; **required when uploading from cloud/VPS IPs** |
+| `mocha.my` | `Mocha API key` | **Yes** | **Required for authenticated uploads** |
 
 ## Host-by-Host Details
 
@@ -137,20 +137,45 @@ API reference: <https://0807.st/api>
 
 ### Fileditch (`new.fileditch.com`)
 - Option: `Fileditch API key` (optional)
-- Required: No. Anonymous uploads work; an API key may enable account-linked features.
+- Required: No on residential connections; **required on cloud/VPS IPs** (AWS,
+  Azure, Google Cloud and similar). Fileditch returns HTTP 401 with
+  `code: "api-key-required"` in that case.
+- Uploads use `POST`/`PUT https://new.fileditch.com/upload.php?filename=…` with
+  the raw file body. Upify sends a streaming `PUT` with `Content-Length`, which
+  avoids the `411`/`413` errors of the old `/upload` route.
+- The response contains `url`, `filename` and `size`; the API key, when set, is
+  sent as `Authorization: Bearer …`.
 
 ### Mocha (`mocha.my`)
-- Option: `Mocha API key` (optional)
-- Required: No. Anonymous uploads work; an API key may enable account-linked features.
+- Option: `Mocha API key`
+- Required: **Yes**. Mocha's upload API is authenticated; anonymous uploads are
+  no longer accepted.
+- Uploads use the multipart flow: `POST /api/files/multipart/init`, then either
+  direct parts (`PUT /api/files/multipart/part`) or S3 presigned parts
+  (`POST /api/files/multipart/presigned`), then
+  `POST /api/files/multipart/complete`. Upify creates the share link with
+  `POST /api/shares` and returns `https://mocha.my/share/<token>`.
+
+How to get the token:
+1. Sign in at <https://mocha.my>.
+2. Open the account/API settings.
+3. Copy your API token and paste it in Upify.
 
 ### DropDrive (`dropdrive.rip`)
 - Option: `DropDrive account token`
 - Required: No. Anonymous uploads work, Upify solves the required proof-of-work
   (SHA-256, leading zero bits) automatically.
-- Uploads are chunked: `GET /api/config`, optional
-  `GET /api/upload/pow-challenge`, `POST /api/upload/init`, then every part is
-  sent to the assigned storage server, and `POST /api/upload/complete` returns
-  the share link.
+- Uploads start with `GET /api/config`, optional
+  `GET /api/upload/pow-challenge`, then `POST /api/upload/init`.
+- The init response selects the backend:
+  - `uploadBackend: "s3"` with `uploadMode: "single"`: Upify `PUT`s the whole
+    file to `uploadUrl`, then calls `POST /api/upload/s3-complete`.
+  - `uploadBackend: "s3"` with multiple parts: Upify signs each part with
+    `POST /api/upload/s3-part`, `PUT`s it to the signed URL and sends all ETags
+    to `POST /api/upload/s3-complete`.
+  - Otherwise: Upify sends each raw part to the returned `storageServerUrl`.
+- Finally `POST /api/upload/complete` returns the share link. S3 sessions send
+  their per-session `uploadToken`; storage-server sessions do not.
 - With an account token, the proof-of-work is skipped and files are stored in
   that account.
 
