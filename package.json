@@ -1,6 +1,6 @@
 {
   "name": "upify",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Upify multi-host uploader",
   "main": "electron-main.js",
   "bin": "src/server.js",
