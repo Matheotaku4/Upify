@@ -952,6 +952,25 @@ function toPositiveNumber(value) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
+function toPositiveSafeInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
+}
+
+function requireHttpsUrl(value, label) {
+  const text = String(value || "").trim();
+  let parsed;
+  try {
+    parsed = new URL(text);
+  } catch {
+    throw new UploadError(`${label} is not a valid URL`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new UploadError(`${label} must use HTTPS`);
+  }
+  return text;
+}
+
 function computeFileMd5(filePath) {
   return new Promise((resolve, reject) => {
     const hash = createHash("md5");
@@ -1049,15 +1068,19 @@ async function uploadToDropDrive(file, options = {}) {
       }
 
       const parts = [];
-      const partSize = toPositiveNumber(initBody.partSize);
-      const partCount = toPositiveNumber(initBody.partCount);
+      const partSize = toPositiveSafeInteger(initBody.partSize);
+      const partCount = toPositiveSafeInteger(initBody.partCount);
       const singleUploadUrl = String(initBody.uploadUrl || "").trim();
+      const isSingleUpload =
+        initBody.uploadMode === "single" ||
+        (!initBody.uploadMode && !partCount && Boolean(singleUploadUrl));
 
-      if (initBody.uploadMode === "single" || (!partCount && singleUploadUrl)) {
+      if (isSingleUpload) {
         if (!singleUploadUrl) {
           throw new UploadError("DropDrive: S3 single upload did not return an upload URL", initBody);
         }
-        const putResp = await http.put(singleUploadUrl, createChunkStream(file.path, 0, file.size, signal), {
+        const safeSingleUploadUrl = requireHttpsUrl(singleUploadUrl, "DropDrive: S3 upload URL");
+        const putResp = await http.put(safeSingleUploadUrl, createChunkStream(file.path, 0, file.size, signal), {
           headers: {
             "Content-Type": "application/octet-stream",
             "Content-Length": String(file.size)
@@ -1075,8 +1098,13 @@ async function uploadToDropDrive(file, options = {}) {
         }
         parts.push({ PartNumber: 1, ETag: etag });
       } else {
-        if (!partSize || !partCount) {
-          throw new UploadError("DropDrive: S3 session is missing its part layout", initBody);
+        const expectedPartCount = partSize ? Math.max(1, Math.ceil(file.size / partSize)) : null;
+        if (!partSize || !partCount || partCount !== expectedPartCount) {
+          throw new UploadError("DropDrive: S3 session has an invalid part layout", {
+            partSize,
+            partCount,
+            expectedPartCount
+          });
         }
         for (let index = 0; index < partCount; index += 1) {
           throwIfAborted(signal);
@@ -1097,8 +1125,12 @@ async function uploadToDropDrive(file, options = {}) {
           if (signResp.status < 200 || signResp.status >= 300 || !signedUrl) {
             throw makeErrorFromResponse(`DropDrive: unable to sign part ${partNumber}`, signResp, signBody);
           }
+          const safeSignedUrl = requireHttpsUrl(
+            signedUrl,
+            `DropDrive: signed URL for part ${partNumber}`
+          );
 
-          const putResp = await http.put(signedUrl, createChunkStream(file.path, offset, length, signal), {
+          const putResp = await http.put(safeSignedUrl, createChunkStream(file.path, offset, length, signal), {
             headers: {
               "Content-Type": "application/octet-stream",
               "Content-Length": String(length)
@@ -1144,10 +1176,19 @@ async function uploadToDropDrive(file, options = {}) {
       if (!storageBase) {
         throw new UploadError("DropDrive: initialization did not return a usable storage backend", initBody);
       }
+      const safeStorageBase = requireHttpsUrl(storageBase, "DropDrive: storage server URL");
 
-      const partSize = toPositiveNumber(initBody.chunkSize) || chunkSize;
-      const partCount =
-        toPositiveNumber(initBody.partCount) || Math.max(1, Math.ceil(file.size / partSize));
+      const partSize = toPositiveSafeInteger(initBody.chunkSize) || chunkSize;
+      const expectedPartCount = Math.max(1, Math.ceil(file.size / partSize));
+      const responsePartCount = toPositiveSafeInteger(initBody.partCount);
+      if (responsePartCount && responsePartCount !== expectedPartCount) {
+        throw new UploadError("DropDrive: storage session has an invalid part layout", {
+          partSize,
+          partCount: responsePartCount,
+          expectedPartCount
+        });
+      }
+      const partCount = responsePartCount || expectedPartCount;
 
       for (let index = 0; index < partCount; index += 1) {
         throwIfAborted(signal);
@@ -1157,7 +1198,7 @@ async function uploadToDropDrive(file, options = {}) {
           throw new UploadError("DropDrive: storage part layout does not match the file size", initBody);
         }
         const isLast = index === partCount - 1;
-        const partUrl = `${storageBase}/files/${encodeURIComponent(sessionId)}/${index}${isLast ? "?last=1" : ""}`;
+        const partUrl = `${safeStorageBase}/files/${encodeURIComponent(sessionId)}/${index}${isLast ? "?last=1" : ""}`;
         const partResp = await http.post(partUrl, createChunkStream(file.path, offset, length, signal), {
           headers: {
             "Content-Type": "application/octet-stream",
@@ -1226,7 +1267,7 @@ async function uploadToFileditch(file, options = {}) {
 
   const response = await http.put(
     `https://new.fileditch.com/upload.php?filename=${encodeURIComponent(file.originalname)}`,
-    createChunkStream(file.path, 0, file.size, signal),
+    file.size > 0 ? createChunkStream(file.path, 0, file.size, signal) : Buffer.alloc(0),
     {
       headers,
       timeout,
@@ -1361,7 +1402,8 @@ async function uploadToMocha(file, options = {}) {
       }
     }
 
-    if (presignResp.status < 200 || presignResp.status >= 300 || urlByPart.size < partCount) {
+    const missingPart = partNumbers.find((partNumber) => !urlByPart.has(partNumber));
+    if (presignResp.status < 200 || presignResp.status >= 300 || missingPart !== undefined) {
       throw makeErrorFromResponse("Mocha: unable to get upload part URLs", presignResp, presignBody);
     }
 
@@ -1374,7 +1416,11 @@ async function uploadToMocha(file, options = {}) {
       if (!signedUrl) {
         throw new UploadError(`Mocha: missing signed URL for part ${partNumber}`);
       }
-      const putResp = await http.put(signedUrl, createChunkStream(file.path, offset, length, signal), {
+      const safeSignedUrl = requireHttpsUrl(
+        signedUrl,
+        `Mocha: signed URL for part ${partNumber}`
+      );
+      const putResp = await http.put(safeSignedUrl, createChunkStream(file.path, offset, length, signal), {
         headers: {
           "Content-Type": "application/octet-stream",
           "Content-Length": String(length)
