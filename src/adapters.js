@@ -389,7 +389,8 @@ async function uploadToGofile(file, options = {}) {
   }
   form.append("file", fs.createReadStream(file.path), {
     filename: file.originalname,
-    contentType: file.mimetype || "application/octet-stream"
+    contentType: file.mimetype || "application/octet-stream",
+    knownLength: file.size
   });
 
   const uploadResp = await http.post("https://upload.gofile.io/uploadfile", form, {
@@ -430,7 +431,8 @@ async function uploadTo1fichier(file, options = {}) {
   const form = new FormData();
   form.append("file[]", fs.createReadStream(file.path), {
     filename: file.originalname,
-    contentType: file.mimetype || "application/octet-stream"
+    contentType: file.mimetype || "application/octet-stream",
+    knownLength: file.size
   });
 
   if (options.did !== undefined && options.did !== null && options.did !== "") {
@@ -487,7 +489,8 @@ async function uploadToRootzRegular(file, options = {}) {
   const form = new FormData();
   form.append("file", fs.createReadStream(file.path), {
     filename: file.originalname,
-    contentType: file.mimetype || "application/octet-stream"
+    contentType: file.mimetype || "application/octet-stream",
+    knownLength: file.size
   });
   if (options.folderId) {
     form.append("folderId", options.folderId);
@@ -730,7 +733,8 @@ async function uploadToSendNow(file, options = {}) {
   }
   form.append("file_0", fs.createReadStream(file.path), {
     filename: file.originalname,
-    contentType: file.mimetype || "application/octet-stream"
+    contentType: file.mimetype || "application/octet-stream",
+    knownLength: file.size
   });
 
   const uploadResp = await http.post(actionUrl, form, {
@@ -848,7 +852,8 @@ async function uploadTo0807(file, options = {}) {
     const form = new FormData();
     form.append("file", fs.createReadStream(file.path), {
       filename: file.originalname,
-      contentType: file.mimetype || "application/octet-stream"
+      contentType: file.mimetype || "application/octet-stream",
+      knownLength: file.size
     });
     for (const [name, value] of Object.entries(extraFields)) {
       form.append(name, value);
@@ -932,17 +937,62 @@ async function uploadTo0807(file, options = {}) {
   throw makeErrorFromResponse("0807.st: upload completion failed", finishResp, finishBody);
 }
 
+function getResponseEtag(response) {
+  const headers = response?.headers || {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (String(name).toLowerCase() === "etag") {
+      return String(Array.isArray(value) ? value[0] : value).trim();
+    }
+  }
+  return "";
+}
+
+function toPositiveNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function toPositiveSafeInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
+}
+
+function requireHttpsUrl(value, label) {
+  const text = String(value || "").trim();
+  let parsed;
+  try {
+    parsed = new URL(text);
+  } catch {
+    throw new UploadError(`${label} is not a valid URL`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new UploadError(`${label} must use HTTPS`);
+  }
+  return text;
+}
+
+function computeFileMd5(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("md5");
+    const stream = fs.createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", () => resolve(hash.digest("hex")));
+  });
+}
+
 async function uploadToDropDrive(file, options = {}) {
   const signal = options.signal || null;
   const token = String(options.token || "").trim();
+  const folderId = String(options.folderId || "").trim();
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
   const jsonHeaders = { "Content-Type": "application/json", ...authHeaders };
   const timeout = Math.max(HTTP_TIMEOUT_MS, 600_000);
+  const base = "https://dropdrive.rip";
 
-  const configResp = await http.get("https://dropdrive.rip/api/config", mergeSignal({}, signal));
+  const configResp = await http.get(`${base}/api/config`, mergeSignal({}, signal));
   const configBody = parseJsonLoose(configResp.data) || {};
-  const configuredChunkSize = Number(configBody.chunkSizeBytes);
-  const chunkSize = configuredChunkSize > 0 ? configuredChunkSize : 100 * MIB;
+  const chunkSize = toPositiveNumber(configBody.chunkSizeBytes) || 100 * MIB;
   const maxFileSizeGb = Number(configBody.maxFileSizeGB);
 
   if (!token && configBody.allowAnonymousUploads === false) {
@@ -952,18 +1002,17 @@ async function uploadToDropDrive(file, options = {}) {
     throw new UploadError(`DropDrive: file exceeds the ${maxFileSizeGb} GB limit`);
   }
 
-  const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
   const initPayload = {
     fileName: file.originalname,
     fileSize: file.size,
-    totalChunks
+    totalChunks: Math.max(1, Math.ceil(file.size / chunkSize))
   };
+  if (folderId) {
+    initPayload.folderId = folderId;
+  }
 
   if (!token) {
-    const challengeResp = await http.get(
-      "https://dropdrive.rip/api/upload/pow-challenge",
-      mergeSignal({}, signal)
-    );
+    const challengeResp = await http.get(`${base}/api/upload/pow-challenge`, mergeSignal({}, signal));
     const challengeBody = parseJsonLoose(challengeResp.data);
 
     if (!challengeBody?.skipPow) {
@@ -980,98 +1029,257 @@ async function uploadToDropDrive(file, options = {}) {
     }
   }
 
-  const initResp = await http.post("https://dropdrive.rip/api/upload/init", initPayload, {
+  const initResp = await http.post(`${base}/api/upload/init`, initPayload, {
     headers: jsonHeaders,
     ...mergeSignal({}, signal)
   });
-  const initBody = parseJsonLoose(initResp.data);
-  const sessionId = initBody?.sessionId || null;
-  const uploadToken = String(initBody?.uploadToken || "").trim();
+  const initBody = parseJsonLoose(initResp.data) || {};
+  const sessionId = String(initBody.sessionId || "").trim();
+  const uploadToken = String(initBody.uploadToken || "").trim();
+  const uploadBackend = String(initBody.uploadBackend || "").trim();
 
-  // New API returns s3Target instead of storageServerUrl.
-  // Support both formats for backward compatibility.
-  let storageBase = String(initBody?.storageServerUrl || "").replace(/\/+$/, "");
-  if (!storageBase && initBody?.s3Target?.name) {
-    storageBase = `https://${initBody.s3Target.name}.dropdrive.rip`.replace(/\/+$/, "");
-  }
-
-  if (initResp.status < 200 || initResp.status >= 300 || !sessionId || !storageBase) {
+  if (initResp.status < 200 || initResp.status >= 300 || !sessionId) {
     throw makeErrorFromResponse("DropDrive: unable to start upload", initResp, initBody);
   }
 
-  const partSize = Number(initBody.chunkSize) > 0 ? Number(initBody.chunkSize) : chunkSize;
-  // Use uploadToken for part upload authentication when available (new API).
-  const partAuthHeaders = uploadToken ? { Authorization: `Bearer ${uploadToken}` } : authHeaders;
+  let heartbeatTimer = null;
+  const stopHeartbeat = () => {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  };
 
-  for (let index = 0; index < totalChunks; index += 1) {
-    throwIfAborted(signal);
-    const offset = index * partSize;
-    const length = Math.min(partSize, file.size - offset);
-    const isLast = index === totalChunks - 1;
-    const partUrl = `${storageBase}/files/${encodeURIComponent(sessionId)}/${index}${isLast ? "?last=1" : ""}`;
-    const partResp = await http.post(partUrl, createChunkStream(file.path, offset, length, signal), {
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Length": String(length),
-        ...partAuthHeaders
-      },
-      timeout,
-      maxRedirects: 0,
+  try {
+    if (uploadBackend === "s3") {
+      if (!uploadToken) {
+        throw new UploadError("DropDrive: S3 session did not return an upload token", initBody);
+      }
+
+      heartbeatTimer = setInterval(() => {
+        http.post(
+          `${base}/api/upload/s3-heartbeat`,
+          { sessionId, uploadToken },
+          { headers: jsonHeaders, timeout: 30_000 }
+        ).catch(() => {});
+      }, 30_000);
+      if (typeof heartbeatTimer.unref === "function") {
+        heartbeatTimer.unref();
+      }
+
+      const parts = [];
+      const partSize = toPositiveSafeInteger(initBody.partSize);
+      const partCount = toPositiveSafeInteger(initBody.partCount);
+      const singleUploadUrl = String(initBody.uploadUrl || "").trim();
+      const isSingleUpload =
+        initBody.uploadMode === "single" ||
+        (!initBody.uploadMode && !partCount && Boolean(singleUploadUrl));
+
+      if (isSingleUpload) {
+        if (!singleUploadUrl) {
+          throw new UploadError("DropDrive: S3 single upload did not return an upload URL", initBody);
+        }
+        const safeSingleUploadUrl = requireHttpsUrl(singleUploadUrl, "DropDrive: S3 upload URL");
+        const putResp = await http.put(safeSingleUploadUrl, createChunkStream(file.path, 0, file.size, signal), {
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": String(file.size)
+          },
+          timeout,
+          maxRedirects: 0,
+          ...mergeSignal({}, signal)
+        });
+        if (putResp.status < 200 || putResp.status >= 300) {
+          throw makeErrorFromResponse("DropDrive: S3 upload failed", putResp, parseJsonLoose(putResp.data));
+        }
+        const etag = getResponseEtag(putResp);
+        if (!etag) {
+          throw new UploadError("DropDrive: S3 upload did not return an ETag", { status: putResp.status });
+        }
+        parts.push({ PartNumber: 1, ETag: etag });
+      } else {
+        const expectedPartCount = partSize ? Math.max(1, Math.ceil(file.size / partSize)) : null;
+        if (!partSize || !partCount || partCount !== expectedPartCount) {
+          throw new UploadError("DropDrive: S3 session has an invalid part layout", {
+            partSize,
+            partCount,
+            expectedPartCount
+          });
+        }
+        for (let index = 0; index < partCount; index += 1) {
+          throwIfAborted(signal);
+          const partNumber = index + 1;
+          const offset = index * partSize;
+          const length = Math.min(partSize, file.size - offset);
+          if (length <= 0) {
+            throw new UploadError("DropDrive: S3 part layout does not match the file size", initBody);
+          }
+
+          const signResp = await http.post(
+            `${base}/api/upload/s3-part`,
+            { sessionId, uploadToken, partNumber },
+            { headers: jsonHeaders, ...mergeSignal({}, signal) }
+          );
+          const signBody = parseJsonLoose(signResp.data);
+          const signedUrl = String(signBody?.url || "").trim();
+          if (signResp.status < 200 || signResp.status >= 300 || !signedUrl) {
+            throw makeErrorFromResponse(`DropDrive: unable to sign part ${partNumber}`, signResp, signBody);
+          }
+          const safeSignedUrl = requireHttpsUrl(
+            signedUrl,
+            `DropDrive: signed URL for part ${partNumber}`
+          );
+
+          const putResp = await http.put(safeSignedUrl, createChunkStream(file.path, offset, length, signal), {
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "Content-Length": String(length)
+            },
+            timeout,
+            maxRedirects: 0,
+            ...mergeSignal({}, signal)
+          });
+          if (putResp.status < 200 || putResp.status >= 300) {
+            throw makeErrorFromResponse(
+              `DropDrive: part ${partNumber} upload failed`,
+              putResp,
+              parseJsonLoose(putResp.data)
+            );
+          }
+          const etag = getResponseEtag(putResp);
+          if (!etag) {
+            throw new UploadError(`DropDrive: part ${partNumber} upload did not return an ETag`, {
+              status: putResp.status
+            });
+          }
+          parts.push({ PartNumber: partNumber, ETag: etag });
+        }
+        if (parts.length !== partCount) {
+          throw new UploadError("DropDrive: not all S3 parts were uploaded", {
+            expected: partCount,
+            uploaded: parts.length
+          });
+        }
+      }
+
+      const s3Resp = await http.post(
+        `${base}/api/upload/s3-complete`,
+        { sessionId, uploadToken, parts },
+        { headers: jsonHeaders, ...mergeSignal({}, signal) }
+      );
+      const s3Body = parseJsonLoose(s3Resp.data);
+      if (s3Resp.status < 200 || s3Resp.status >= 300 || s3Body?.complete !== true) {
+        throw makeErrorFromResponse("DropDrive: unable to complete S3 storage", s3Resp, s3Body);
+      }
+    } else {
+      const storageBase = String(initBody.storageServerUrl || "").trim().replace(/\/+$/, "");
+      if (!storageBase) {
+        throw new UploadError("DropDrive: initialization did not return a usable storage backend", initBody);
+      }
+      const safeStorageBase = requireHttpsUrl(storageBase, "DropDrive: storage server URL");
+
+      const partSize = toPositiveSafeInteger(initBody.chunkSize) || chunkSize;
+      const expectedPartCount = Math.max(1, Math.ceil(file.size / partSize));
+      const responsePartCount = toPositiveSafeInteger(initBody.partCount);
+      if (responsePartCount && responsePartCount !== expectedPartCount) {
+        throw new UploadError("DropDrive: storage session has an invalid part layout", {
+          partSize,
+          partCount: responsePartCount,
+          expectedPartCount
+        });
+      }
+      const partCount = responsePartCount || expectedPartCount;
+
+      for (let index = 0; index < partCount; index += 1) {
+        throwIfAborted(signal);
+        const offset = index * partSize;
+        const length = Math.min(partSize, file.size - offset);
+        if (length <= 0) {
+          throw new UploadError("DropDrive: storage part layout does not match the file size", initBody);
+        }
+        const isLast = index === partCount - 1;
+        const partUrl = `${safeStorageBase}/files/${encodeURIComponent(sessionId)}/${index}${isLast ? "?last=1" : ""}`;
+        const partResp = await http.post(partUrl, createChunkStream(file.path, offset, length, signal), {
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": String(length),
+            ...authHeaders
+          },
+          timeout,
+          maxRedirects: 0,
+          ...mergeSignal({}, signal)
+        });
+        if (partResp.status < 200 || partResp.status >= 300) {
+          throw makeErrorFromResponse(
+            `DropDrive: part ${index + 1} upload failed`,
+            partResp,
+            parseJsonLoose(partResp.data)
+          );
+        }
+      }
+    }
+
+    const completePayload = { sessionId };
+    if (uploadBackend === "s3") {
+      completePayload.uploadToken = uploadToken;
+    }
+    if (folderId) {
+      completePayload.folderId = folderId;
+    }
+
+    const completeResp = await http.post(`${base}/api/upload/complete`, completePayload, {
+      headers: jsonHeaders,
       ...mergeSignal({}, signal)
     });
+    const completeBody = parseJsonLoose(completeResp.data);
+    const downloadUrl = completeBody?.downloadUrl || null;
+    const shortCode = completeBody?.shortCode || null;
+    let url = null;
 
-    if (partResp.status < 200 || partResp.status >= 300) {
-      throw makeErrorFromResponse(
-        `DropDrive: part ${index + 1} upload failed`,
-        partResp,
-        parseJsonLoose(partResp.data)
-      );
+    if (downloadUrl) {
+      url = new URL(downloadUrl, `${base}/`).toString();
+    } else if (shortCode) {
+      url = `${base}/d/${encodeURIComponent(shortCode)}`;
     }
+
+    if (completeResp.status >= 200 && completeResp.status < 300 && url) {
+      return { url, raw: completeBody };
+    }
+
+    throw makeErrorFromResponse("DropDrive: upload completion failed", completeResp, completeBody);
+  } finally {
+    stopHeartbeat();
   }
-
-  const completeResp = await http.post(
-    "https://dropdrive.rip/api/upload/complete",
-    { sessionId },
-    { headers: jsonHeaders, ...mergeSignal({}, signal) }
-  );
-  const completeBody = parseJsonLoose(completeResp.data);
-  const downloadUrl = completeBody?.downloadUrl || null;
-  const shortCode = completeBody?.shortCode || null;
-  let url = null;
-
-  if (downloadUrl) {
-    url = new URL(downloadUrl, "https://dropdrive.rip/").toString();
-  } else if (shortCode) {
-    url = `https://dropdrive.rip/d/${encodeURIComponent(shortCode)}`;
-  }
-
-  if (completeResp.status >= 200 && completeResp.status < 300 && url) {
-    return { url, raw: completeBody };
-  }
-
-  throw makeErrorFromResponse("DropDrive: upload completion failed", completeResp, completeBody);
 }
 
 async function uploadToFileditch(file, options = {}) {
   const signal = options.signal || null;
+  const apiKey = String(options.apiKey || "").trim();
   const timeout = Math.max(HTTP_TIMEOUT_MS, 600_000);
 
-  const form = new FormData();
-  form.append("file", fs.createReadStream(file.path), {
-    filename: file.originalname,
-    contentType: file.mimetype || "application/octet-stream"
-  });
+  const headers = {
+    "Content-Type": file.mimetype || "application/octet-stream",
+    "Content-Length": String(file.size)
+  };
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
 
-  const response = await http.post("https://new.fileditch.com/upload", form, {
-    headers: form.getHeaders(),
-    timeout,
-    maxRedirects: 0,
-    ...mergeSignal({}, signal)
-  });
+  const response = await http.put(
+    `https://new.fileditch.com/upload.php?filename=${encodeURIComponent(file.originalname)}`,
+    file.size > 0 ? createChunkStream(file.path, 0, file.size, signal) : Buffer.alloc(0),
+    {
+      headers,
+      timeout,
+      maxRedirects: 0,
+      ...mergeSignal({}, signal)
+    }
+  );
   const body = parseJsonLoose(response.data);
+  const url = body?.url || body?.link || body?.fileUrl || null;
 
-  if (response.status >= 200 && response.status < 300 && (body?.url || body?.link || body?.fileUrl)) {
-    return { url: body.url || body.link || body.fileUrl, raw: body };
+  if (response.status >= 200 && response.status < 300 && url) {
+    return { url, raw: body };
   }
 
   throw makeErrorFromResponse("Fileditch: upload failed", response, body);
@@ -1079,27 +1287,209 @@ async function uploadToFileditch(file, options = {}) {
 
 async function uploadToMocha(file, options = {}) {
   const signal = options.signal || null;
+  const apiKey = String(options.apiKey || "").trim();
+  const base = "https://mocha.my";
   const timeout = Math.max(HTTP_TIMEOUT_MS, 600_000);
 
-  const form = new FormData();
-  form.append("file", fs.createReadStream(file.path), {
-    filename: file.originalname,
-    contentType: file.mimetype || "application/octet-stream"
-  });
-
-  const response = await http.post("https://mocha.my/upload", form, {
-    headers: form.getHeaders(),
-    timeout,
-    maxRedirects: 0,
-    ...mergeSignal({}, signal)
-  });
-  const body = parseJsonLoose(response.data);
-
-  if (response.status >= 200 && response.status < 300 && (body?.url || body?.link || body?.fileUrl)) {
-    return { url: body.url || body.link || body.fileUrl, raw: body };
+  if (!apiKey) {
+    throw new UploadError(
+      "Mocha: API key is required (sign in at https://mocha.my and copy your API token)"
+    );
+  }
+  if (!(file.size > 0)) {
+    throw new UploadError("Mocha: empty files are not supported");
   }
 
-  throw makeErrorFromResponse("Mocha: upload failed", response, body);
+  const authHeaders = { Authorization: `Bearer ${apiKey}` };
+  const jsonHeaders = { ...authHeaders, "Content-Type": "application/json" };
+  const folderPath = String(options.path || "/");
+  const purpose = "normal";
+
+  const initResp = await http.post(
+    `${base}/api/files/multipart/init`,
+    {
+      originalName: file.originalname,
+      size: file.size,
+      mimeType: file.mimetype || "application/octet-stream",
+      path: folderPath,
+      purpose
+    },
+    { headers: jsonHeaders, ...mergeSignal({}, signal) }
+  );
+  const initBody = parseJsonLoose(initResp.data);
+
+  if (
+    initResp.status < 200 ||
+    initResp.status >= 300 ||
+    !initBody ||
+    typeof initBody.directPartUpload !== "boolean" ||
+    !initBody.uploadId ||
+    !initBody.key ||
+    !initBody.nodeId
+  ) {
+    throw makeErrorFromResponse("Mocha: unable to start upload", initResp, initBody);
+  }
+
+  const uploadId = String(initBody.uploadId);
+  const key = String(initBody.key);
+  const nodeId = String(initBody.nodeId);
+  const originalName = String(initBody.originalName || file.originalname);
+  const directPartUpload = initBody.directPartUpload === true;
+  const directPartSize = toPositiveNumber(initBody.directPartSizeBytes);
+  const basePartSize = toPositiveNumber(initBody.partSizeBytes);
+  const partSize = directPartUpload && directPartSize ? directPartSize : basePartSize || 50 * MIB;
+  const partCount = Math.max(1, Math.ceil(file.size / partSize));
+  const parts = [];
+
+  if (directPartUpload) {
+    for (let index = 0; index < partCount; index += 1) {
+      throwIfAborted(signal);
+      const partNumber = index + 1;
+      const offset = index * partSize;
+      const length = Math.min(partSize, file.size - offset);
+      const query = new URLSearchParams({
+        uploadId,
+        key,
+        nodeId,
+        originalName,
+        partNumber: String(partNumber),
+        path: folderPath
+      });
+      const partResp = await http.put(
+        `${base}/api/files/multipart/part?${query.toString()}`,
+        createChunkStream(file.path, offset, length, signal),
+        {
+          headers: {
+            ...authHeaders,
+            "Content-Type": "application/octet-stream",
+            "Content-Length": String(length)
+          },
+          timeout,
+          maxRedirects: 0,
+          ...mergeSignal({}, signal)
+        }
+      );
+      const partBody = parseJsonLoose(partResp.data);
+      const etag = String(partBody?.etag || "").trim();
+      if (partResp.status < 200 || partResp.status >= 300 || !etag) {
+        throw makeErrorFromResponse(`Mocha: part ${partNumber} upload failed`, partResp, partBody);
+      }
+      parts.push({ partNumber, etag });
+    }
+  } else {
+    const partNumbers = Array.from({ length: partCount }, (_value, index) => index + 1);
+    const presignResp = await http.post(
+      `${base}/api/files/multipart/presigned`,
+      {
+        uploadId,
+        key,
+        nodeId,
+        originalName,
+        path: folderPath,
+        partNumbers,
+        purpose
+      },
+      { headers: jsonHeaders, ...mergeSignal({}, signal) }
+    );
+    const presignBody = parseJsonLoose(presignResp.data);
+    const urls = Array.isArray(presignBody?.urls) ? presignBody.urls : [];
+    const urlByPart = new Map();
+
+    for (const entry of urls) {
+      const partNumber = Number(entry?.partNumber);
+      if (Number.isFinite(partNumber) && entry?.url) {
+        urlByPart.set(partNumber, String(entry.url));
+      }
+    }
+
+    const missingPart = partNumbers.find((partNumber) => !urlByPart.has(partNumber));
+    if (presignResp.status < 200 || presignResp.status >= 300 || missingPart !== undefined) {
+      throw makeErrorFromResponse("Mocha: unable to get upload part URLs", presignResp, presignBody);
+    }
+
+    for (let index = 0; index < partCount; index += 1) {
+      throwIfAborted(signal);
+      const partNumber = index + 1;
+      const offset = index * partSize;
+      const length = Math.min(partSize, file.size - offset);
+      const signedUrl = urlByPart.get(partNumber);
+      if (!signedUrl) {
+        throw new UploadError(`Mocha: missing signed URL for part ${partNumber}`);
+      }
+      const safeSignedUrl = requireHttpsUrl(
+        signedUrl,
+        `Mocha: signed URL for part ${partNumber}`
+      );
+      const putResp = await http.put(safeSignedUrl, createChunkStream(file.path, offset, length, signal), {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": String(length)
+        },
+        timeout,
+        maxRedirects: 0,
+        ...mergeSignal({}, signal)
+      });
+      const etag = getResponseEtag(putResp);
+      if (putResp.status < 200 || putResp.status >= 300 || !etag) {
+        throw makeErrorFromResponse(
+          `Mocha: part ${partNumber} upload failed`,
+          putResp,
+          parseJsonLoose(putResp.data)
+        );
+      }
+      parts.push({ partNumber, etag });
+    }
+  }
+
+  parts.sort((left, right) => left.partNumber - right.partNumber);
+
+  let md5 = null;
+  if (file.size <= 200 * MIB) {
+    md5 = await computeFileMd5(file.path);
+  }
+
+  const completeResp = await http.post(
+    `${base}/api/files/multipart/complete`,
+    {
+      uploadId,
+      key,
+      nodeId,
+      originalName: file.originalname,
+      purpose,
+      path: folderPath,
+      size: file.size,
+      mimeType: file.mimetype || "application/octet-stream",
+      parts,
+      md5
+    },
+    { headers: jsonHeaders, ...mergeSignal({}, signal) }
+  );
+  const completeBody = parseJsonLoose(completeResp.data);
+  const fileName = completeBody?.file?.file_name || completeBody?.file_name || null;
+
+  if (completeResp.status < 200 || completeResp.status >= 300 || !fileName) {
+    throw makeErrorFromResponse("Mocha: upload completion failed", completeResp, completeBody);
+  }
+
+  const shareResp = await http.post(
+    `${base}/api/shares`,
+    { fileName, expiresInHours: null },
+    { headers: jsonHeaders, ...mergeSignal({}, signal) }
+  );
+  const shareBody = parseJsonLoose(shareResp.data);
+  const shareToken = shareBody?.share?.token || null;
+
+  if (shareResp.status < 200 || shareResp.status >= 300 || !shareToken) {
+    throw new UploadError("Mocha: upload succeeded but share link creation failed", {
+      upload: completeBody,
+      share: shareBody
+    });
+  }
+
+  return {
+    url: `${base}/share/${encodeURIComponent(shareToken)}`,
+    raw: { upload: completeBody, share: shareBody }
+  };
 }
 
 async function uploadToVikingfile(file, options = {}) {
@@ -1115,7 +1505,8 @@ async function uploadToVikingfile(file, options = {}) {
   const form = new FormData();
   form.append("file", fs.createReadStream(file.path), {
     filename: file.originalname,
-    contentType: file.mimetype || "application/octet-stream"
+    contentType: file.mimetype || "application/octet-stream",
+    knownLength: file.size
   });
   form.append("user", options.user == null ? "" : String(options.user));
   if (options.path) {
@@ -1170,7 +1561,8 @@ async function uploadToFilemirage(file, options = {}) {
   const form = new FormData();
   form.append("file", fs.createReadStream(file.path), {
     filename: file.originalname,
-    contentType: file.mimetype || "application/octet-stream"
+    contentType: file.mimetype || "application/octet-stream",
+    knownLength: file.size
   });
   form.append("filename", file.originalname);
   form.append("upload_id", uploadId);
@@ -1247,7 +1639,8 @@ async function uploadToPixeldrain(file, options = {}) {
     const form = new FormData();
     form.append("file", fs.createReadStream(file.path), {
       filename: file.originalname,
-      contentType: file.mimetype || "application/octet-stream"
+      contentType: file.mimetype || "application/octet-stream",
+      knownLength: file.size
     });
     const response = await http.post("https://pixeldrain.com/api/file", form, {
       auth,
@@ -1318,11 +1711,13 @@ async function uploadToBowFile(file, options = {}) {
   }
   uploadForm.append("upload_file", fs.createReadStream(file.path), {
     filename: file.originalname,
-    contentType: file.mimetype || "application/octet-stream"
+    contentType: file.mimetype || "application/octet-stream",
+    knownLength: file.size
   });
 
   const uploadResp = await http.post("https://bowfile.com/api/v2/file/upload", uploadForm, {
     headers: uploadForm.getHeaders(),
+    timeout: Math.max(HTTP_TIMEOUT_MS, 600_000),
     maxRedirects: 0,
     ...mergeSignal({}, signal)
   });
